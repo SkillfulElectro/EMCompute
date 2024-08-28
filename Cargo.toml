@@ -1,0 +1,17 @@
+[package]
+name = "EMCompute"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "EMCompute"
+crate-type = ["cdylib" , "lib"]
+
+[dependencies]
+wgpu = "22"
+pollster = "0.3"
+flume = "0.11"
+rayon = "1.10"
+
+[build-dependencies]
+cbindgen = "0.27"
