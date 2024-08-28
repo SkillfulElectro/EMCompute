@@ -21,4 +21,4 @@ jobs:
     - run: cargo build --release
     - uses: actions/upload-artifact@v4
       with:
-        path: target/
+        path: target/release/
