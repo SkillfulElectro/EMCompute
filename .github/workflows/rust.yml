@@ -34,6 +34,10 @@ jobs:
         Remove-Item -Path "target\release\deps" -Recurse -Force
         Remove-Item -Path "target\release\examples" -Recurse -Force
         Remove-Item -Path "target\release\incremental" -Recurse -Force
+        Remove-Item -Path "target\CACHEDIR.TAG" -Force
+        Remove-Item -Path "target\.rustc_info.json" -Force
+        Remove-Item -Path "target\release\.fingerprint" -Recurse -Force
+        Remove-Item -Path "target\release\.cargo-lock" -Force
 
     # Cleanup steps for macOS and Linux
     - name: Clean up target directory (macOS and Linux only)
@@ -43,6 +47,10 @@ jobs:
         rm -rf target/release/deps
         rm -rf target/release/examples
         rm -rf target/release/incremental
+        rm -f target/CACHEDIR.TAG
+        rm -f target/.rustc_info.json
+        rm -rf target/release/.fingerprint
+        rm -f target/release/.cargo-lock
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
