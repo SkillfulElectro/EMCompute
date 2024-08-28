@@ -14,15 +14,36 @@ env:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+
     steps:
     - uses: actions/checkout@v4
-    - run: rustup update
-    - run: cargo build --release
-    - run: Remove-Item -Path "target\release\build" -Recurse -Force
-    - run: Remove-Item -Path "target\release\deps" -Recurse -Force
-    - run: Remove-Item -Path "target\release\examples" -Recurse -Force
-    - run: Remove-Item -Path "target\release\incremental" -Recurse -Force
+    - name: Set up Rust
+      run: rustup update
+    - name: Build cdylib with Cargo
+      run: cargo build --release --lib --target cdylib
+
+    # Cleanup steps for Windows
+    - name: Clean up target directory (Windows only)
+      if: runner.os == 'Windows'
+      run: |
+        Remove-Item -Path "target\release\build" -Recurse -Force
+        Remove-Item -Path "target\release\deps" -Recurse -Force
+        Remove-Item -Path "target\release\examples" -Recurse -Force
+        Remove-Item -Path "target\release\incremental" -Recurse -Force
+
+    # Cleanup steps for macOS and Linux
+    - name: Clean up target directory (macOS and Linux only)
+      if: runner.os != 'Windows'
+      run: |
+        rm -rf target/release/build
+        rm -rf target/release/deps
+        rm -rf target/release/examples
+        rm -rf target/release/incremental
+
     - uses: actions/upload-artifact@v4
       with:
         path: target/
