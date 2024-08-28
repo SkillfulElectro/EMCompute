@@ -1,6 +1,5 @@
 name: Build
 
-
 permissions: {}
 
 on:
@@ -45,6 +44,8 @@ jobs:
         rm -rf target/release/examples
         rm -rf target/release/incremental
 
-    - uses: actions/upload-artifact@v4
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
       with:
+        name: build-${{ matrix.os }}
         path: target/
