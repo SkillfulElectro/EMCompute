@@ -25,7 +25,7 @@ jobs:
     - name: Set up Rust
       run: rustup update
     - name: Build cdylib with Cargo
-      run: cargo build --release --lib --target cdylib
+      run: cargo build --release
 
     # Cleanup steps for Windows
     - name: Clean up target directory (Windows only)
