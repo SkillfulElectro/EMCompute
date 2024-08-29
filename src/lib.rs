@@ -185,7 +185,7 @@ impl CKernel {
 
     // this function converts enums to
     // equivalent gpu resources
-    fn get_real_config(&self) -> (wgpu::Instance , wgpu::Adapter , wgpu::Device , wgpu::Queue) {
+    fn get_real_config(&self) -> (wgpu::Device , wgpu::Queue) {
         // println!("get real start");
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor{
@@ -354,7 +354,7 @@ pub extern "C" fn compute(kernel : CKernel , data_for_gpu : *mut GroupOfBinders 
             return -1;
         }
 
-        let (instance , adapter , device , queue) = kernel.get_real_config();
+        let (device , queue) = kernel.get_real_config();
 
         // println!("compute data stage");
 
