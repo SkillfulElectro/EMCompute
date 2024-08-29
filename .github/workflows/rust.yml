@@ -64,46 +64,49 @@ jobs:
   build-android:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Rust
-      run: rustup update
+      # Step 1: Check out the code from the repository
+      - uses: actions/checkout@v4
 
-    # Install Android NDK on Ubuntu
-    - name: Install Android NDK
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y wget unzip
-        wget https://dl.google.com/android/repository/android-ndk-r23b-linux.zip
-        unzip android-ndk-r23b-linux.zip -d $HOME
-        echo "ANDROID_NDK_HOME=$HOME/android-ndk-r23b" >> $GITHUB_ENV
-        echo "PATH=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH" >> $GITHUB_ENV
+      # Step 2: Set up Rust toolchain
+      - name: Set up Rust
+        run: rustup update
 
-    # Install Rust target for Android
-    - name: Add Android target
-      run: rustup target add aarch64-linux-android
+      # Step 3: Install Android NDK
+      - name: Install Android NDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget unzip
+          wget https://dl.google.com/android/repository/android-ndk-r23b-linux.zip -O ndk.zip
+          unzip ndk.zip -d $HOME
+          echo "ANDROID_NDK_HOME=$HOME/android-ndk-r23b" >> $GITHUB_ENV
+          echo "$HOME/android-ndk-r23b/toolchains/llvm/prebuilt/linux-x86_64/bin" >> $GITHUB_PATH
 
-    # Build for Android
-    - name: Build for Android
-      run: cargo build --release --target aarch64-linux-android
+      # Step 4: Install Rust target for Android
+      - name: Add Android target
+        run: rustup target add aarch64-linux-android
 
-    # Cleanup steps for Android
-    - name: Clean up target directory (Android)
-      run: |
-        rm -rf target/release/build
-        rm -rf target/release/deps
-        rm -rf target/release/examples
-        rm -rf target/release/incremental
-        rm -f target/CACHEDIR.TAG
-        rm -f target/.rustc_info.json
-        rm -rf target/release/.fingerprint
-        rm -f target/release/.cargo-lock
+      # Step 5: Build for Android
+      - name: Build for Android
+        run: cargo build --release --target aarch64-linux-android
 
-    # Upload Artifact
-    - name: Upload Artifact for Android
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-android
-        path: target/
+      # Step 6: Clean up target directory (Android)
+      - name: Clean up target directory (Android)
+        run: |
+          rm -rf target/release/build
+          rm -rf target/release/deps
+          rm -rf target/release/examples
+          rm -rf target/release/incremental
+          rm -f target/CACHEDIR.TAG
+          rm -f target/.rustc_info.json
+          rm -rf target/release/.fingerprint
+          rm -f target/release/.cargo-lock
+
+      # Step 7: Upload Artifact for Android
+      - name: Upload Artifact for Android
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-android
+          path: target/
 
   build-ios:
     runs-on: macos-latest
@@ -123,14 +126,14 @@ jobs:
     # Cleanup steps for iOS
     - name: Clean up target directory (iOS)
       run: |
-        rm -rf target/release/build
-        rm -rf target/release/deps
+        rm -rf target/aarch64-apple-ios/release/build
+        rm -rf target/aarch64-apple-ios/release/deps
         rm -rf target/release/examples
         rm -rf target/release/incremental
-        rm -f target/CACHEDIR.TAG
+        rm -f target/aarch64-apple-ios/CACHEDIR.TAG
         rm -f target/.rustc_info.json
-        rm -rf target/release/.fingerprint
-        rm -f target/release/.cargo-lock
+        rm -rf target/aarch64-apple-ios/release/.fingerprint
+        rm -f target/aarch64-apple-ios/release/.cargo-lock
 
     # Upload Artifact
     - name: Upload Artifact for iOS
