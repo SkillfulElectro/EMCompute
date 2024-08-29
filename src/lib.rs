@@ -277,7 +277,7 @@ impl CKernel {
 
         // println!("get real done");
 
-        (instance , adapter , device , queue)
+        (device , queue)
     }
 }
 
