@@ -3,7 +3,7 @@ use std::ffi::CStr;
 use wgpu::util::DeviceExt;
 use rayon::prelude::*;
 
-/// core-compute v1.0.0 
+/// EMCompute v1.0.0 
 /// changes to the api :
 /// 1. adding GPUComputingBackend , GPUPowerSettings , GPUSpeedSettings 
 /// GPUMemorySettings enums to make configuration easier for C API better
@@ -13,7 +13,9 @@ use rayon::prelude::*;
 ///
 
 /// NOTE : on linux machines memory leak might happen if you use 
-/// vulkan backend until NVIDIA drivers for linux get fixed
+/// vulkan backend until NVIDIA drivers for linux get fixed .
+///
+///
 
 
 #[repr(C)]
@@ -76,34 +78,63 @@ pub enum GPUSpeedSettings {
 
 #[repr(C)]
 #[derive(Clone , Debug)]
+/// this settings used to tell gpu pre information about 
+/// our work 
 pub enum GPUMemorySettings {
+    /// our app needs to me more performant instead being 
+    /// cable of allocating too much memory on gpu side
     prefer_performance = 0 ,
+    /// our app will need to allocate memory on gpu side 
     prefer_memory = 1 ,
-    /// will be supported in next versions
+    /// will be supported in next versions , by default for now it is set to 
+    /// prefer_memory . in next versions you can tell how much memory 
+    /// you need to allocate on gpu side
     custom_memory = 3 ,
 }
 
 #[repr(C)]
 #[derive(Debug, Clone)]
+/// as config field you have to provide GPUComputingConfig which
+/// represent settings which you wanted
 pub struct GPUComputingConfig {
+    /// set backend which you want 
     pub backend : GPUComputingBackend ,
+    /// set power settings which meets your needs 
     pub power : GPUPowerSettings ,
+    /// set speed settings which matches your needs
     pub speed : GPUSpeedSettings ,
+    /// tell to gpu about your memory usage 
     pub memory : GPUMemorySettings ,
 }
 
 #[repr(C)]
 #[derive(Debug, Clone)]
+/// CKernel which will represent your GPU task
+/// like how Manifest.xml does in an android 
+/// project
 pub struct CKernel {
+    /// set max number of workgroups in x dimension
     pub x : u32 ,
+    /// set max number of workgroups in y dimension
     pub y : u32 ,
+    /// set max number of workgroups in z dimension
     pub z : u32 ,
+    /// this is a kernel code which must be in wgsl for now
+    /// more shading languages will be supported in the future
     pub code : *const c_char ,
+    /// this part in the code , tell to the api which 
+    /// function in the code must be called by gpu 
+    /// when the task is sent to gpu 
     pub code_entry_point : *const c_char ,
+    /// by setting config you can customize behavior of the 
+    /// gpu
     pub config : GPUComputingConfig ,
 }
 
 #[no_mangle]
+/// because setting CKernel config can be annoying if you just 
+/// want to do simple task , this function provides general 
+/// config which will meet most of your needs
 pub extern "C" fn set_kernel_default_config(kernel: *mut CKernel) {
     // println!("set start"); 
     if kernel.is_null() {
@@ -130,7 +161,8 @@ pub extern "C" fn set_kernel_default_config(kernel: *mut CKernel) {
 
 
 impl CKernel {
-    pub fn code_as_string(&self) -> Option<String> {
+    // this function is for future implementions
+    fn code_as_string(&self) -> Option<String> {
         unsafe {
             if self.code.is_null() {
                 None    
@@ -140,7 +172,8 @@ impl CKernel {
         }
     }
 
-    pub fn ep_as_string(&self) -> Option<String> {
+    // this function is for future implementions
+    fn ep_as_string(&self) -> Option<String> {
         unsafe {
             if self.code.is_null() {
                 None    
@@ -150,7 +183,9 @@ impl CKernel {
         }
     }
 
-    pub fn get_real_config(&self) -> (wgpu::Instance , wgpu::Adapter , wgpu::Device , wgpu::Queue) {
+    // this function converts enums to
+    // equivalent gpu resources
+    fn get_real_config(&self) -> (wgpu::Instance , wgpu::Adapter , wgpu::Device , wgpu::Queue) {
         // println!("get real start");
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor{
@@ -248,14 +283,27 @@ impl CKernel {
 
 #[repr(C)]
 #[derive(Debug, Clone)]
+/// this struct is for passing
+/// data based on its bind index 
+/// in gpu side 
 pub struct DataBinder {
+    /// bind index of data in gpu side
     pub bind: u32,
+    /// because data must be in uint8_t (u8 in Rust) 
+    /// in C you have to pass the data len this way 
+    /// 
+    /// sizeof(your type) * real_len_of_your_array / sizeof(uint8_t)
     pub data_len: usize,
+    /// pointer to your data  in memory , it must be 
+    /// uint8_t* (*mut u8 in Rust side) 
+    /// in gpu side the type of this data will 
+    /// be set based on CKernel code you provided
     pub data: *mut u8,
 }
 
 impl DataBinder {
-    pub unsafe fn data_as_vec(&self) -> Option<Vec<u8>> {
+    // this function is for future implementions
+    unsafe fn data_as_vec(&self) -> Option<Vec<u8>> {
         if self.data.is_null() {
             None
         } else {
@@ -267,14 +315,34 @@ impl DataBinder {
 
 #[repr(C)]
 #[derive(Debug, Clone)]
+/// all DataBinder types which have 
+/// the same @group index in your kernel
+/// code must all be gathered in this 
+/// type
 pub struct GroupOfBinders {
+    /// index of group in your kernel code 
     pub group : u32 ,
+    /// pointer to array which all of the 
+    /// DataBinders from same group 
+    /// are gathered in 
     pub datas : *mut DataBinder ,
+    /// len of datas array
     pub datas_len : usize ,
 }
 
 
 #[no_mangle]
+/// the simple and compact function for sending 
+/// your computing task to the gpu side
+///
+/// kernel para = CKernel type which acts as Manifest for your gpu task 
+/// data_for_gpu = pointer to array of GroupOfBinders which contains data which must be sent to gpu 
+/// gpu_data_len = len of the array of the GroupOfBinders
+///
+/// unlike CUDA , you dont need to copy data to gpu manually , this function does it for you 
+/// in the most performant possible way 
+///
+/// if you find any bug or any problem , help us to fix it -> https://github.com/SkillfulElectro/EMCompute.git
 pub extern "C" fn compute(kernel : CKernel , data_for_gpu : *mut GroupOfBinders , gpu_data_len : usize) -> i32 {
 
     {
