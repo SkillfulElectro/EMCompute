@@ -103,6 +103,11 @@ jobs:
           rm -f target/.rustc_info.json
           rm -rf target/release/.fingerprint
           rm -f target/release/.cargo-lock
+          rm -f target/aarch64-linux-android/CACHEDIR.TAG
+          rm -rf target/aarch64-linux-android/release/build
+          rm -rf target/aarch64-linux-android/release/deps
+          rm -rf target/aarch64-linux-android/release/.fingerprint
+          rm -f target/aarch64-linux-android/release/.cargo-lock
 
       # Step 7: Upload Artifact for Android
       - name: Upload Artifact for Android
