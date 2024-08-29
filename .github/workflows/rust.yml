@@ -9,7 +9,6 @@ on:
       - main
 
 env:
-  # Disable incremental compilation for faster from-scratch builds
   CARGO_INCREMENTAL: 0
 
 jobs:
@@ -24,11 +23,11 @@ jobs:
     - name: Set up Rust
       run: rustup update
 
-    # Regular build steps for desktop platforms
+
     - name: Build for Desktop Platforms
       run: cargo build --release
 
-    # Cleanup steps for Windows
+
     - name: Clean up target directory (Windows only)
       if: runner.os == 'Windows'
       run: |
@@ -41,7 +40,7 @@ jobs:
         Remove-Item -Path "target\release\.fingerprint" -Recurse -Force
         Remove-Item -Path "target\release\.cargo-lock" -Force
 
-    # Cleanup steps for macOS and Linux
+
     - name: Clean up target directory (macOS and Linux only)
       if: runner.os != 'Windows'
       run: |
@@ -54,7 +53,7 @@ jobs:
         rm -rf target/release/.fingerprint
         rm -f target/release/.cargo-lock
 
-    # Upload Artifact
+
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
@@ -65,14 +64,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Check out the code from the repository
       - uses: actions/checkout@v4
 
-      # Step 2: Set up Rust toolchain
+
       - name: Set up Rust
         run: rustup update
 
-      # Step 3: Install Android NDK
+
       - name: Install Android NDK
         run: |
           sudo apt-get update
@@ -82,17 +80,17 @@ jobs:
           echo "ANDROID_NDK_HOME=$HOME/android-ndk-r23b" >> $GITHUB_ENV
           echo "$HOME/android-ndk-r23b/toolchains/llvm/prebuilt/linux-x86_64/bin" >> $GITHUB_PATH
 
-      # Step 4: Install Rust target for Android
+      
       - name: Add Android target
         run: rustup target add aarch64-linux-android
 
-      # Step 5: Build for Android using Cross
+
       - name: Build for Android
         run: |
           cargo install cross --git https://github.com/cross-rs/cross
           cross build --release --target aarch64-linux-android
 
-      # Step 6: Clean up target directory (Android)
+
       - name: Clean up target directory (Android)
         run: |
           rm -rf target/release/build
@@ -109,7 +107,7 @@ jobs:
           rm -rf target/aarch64-linux-android/release/.fingerprint
           rm -f target/aarch64-linux-android/release/.cargo-lock
 
-      # Step 7: Upload Artifact for Android
+
       - name: Upload Artifact for Android
         uses: actions/upload-artifact@v4
         with:
@@ -123,15 +121,15 @@ jobs:
     - name: Set up Rust
       run: rustup update
 
-    # Install Rust target for iOS
+
     - name: Add iOS target
       run: rustup target add aarch64-apple-ios
 
-    # Build for iOS
+
     - name: Build for iOS
       run: cargo build --release --target aarch64-apple-ios
 
-    # Cleanup steps for iOS
+
     - name: Clean up target directory (iOS)
       run: |
         rm -rf target/aarch64-apple-ios/release/build
@@ -145,7 +143,7 @@ jobs:
         rm -f target/aarch64-apple-ios/release/.cargo-lock
         rm -rf target/release
 
-    # Upload Artifact
+
     - name: Upload Artifact for iOS
       uses: actions/upload-artifact@v4
       with:
