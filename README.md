@@ -130,17 +130,3 @@ int main() {
 
 ## Contribution
 - if you find any problem or bug , ill be happy with your pull req or issue report 
-```
-```
-```
-```
-
-```
-```
-
-```
-
-
-```
-```
-```
