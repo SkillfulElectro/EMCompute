@@ -63,6 +63,7 @@ jobs:
 
   build-android:
     runs-on: ubuntu-latest
+
     steps:
       # Step 1: Check out the code from the repository
       - uses: actions/checkout@v4
@@ -85,9 +86,11 @@ jobs:
       - name: Add Android target
         run: rustup target add aarch64-linux-android
 
-      # Step 5: Build for Android
+      # Step 5: Build for Android using Cross
       - name: Build for Android
-        run: cargo build --release --target aarch64-linux-android
+        run: |
+          cargo install cross --git https://github.com/cross-rs/cross
+          cross build --release --target aarch64-linux-android
 
       # Step 6: Clean up target directory (Android)
       - name: Clean up target directory (Android)
@@ -131,9 +134,11 @@ jobs:
         rm -rf target/release/examples
         rm -rf target/release/incremental
         rm -f target/aarch64-apple-ios/CACHEDIR.TAG
+        rm -f target/CACHEDIR.TAG
         rm -f target/.rustc_info.json
         rm -rf target/aarch64-apple-ios/release/.fingerprint
         rm -f target/aarch64-apple-ios/release/.cargo-lock
+        rm -rf target/release
 
     # Upload Artifact
     - name: Upload Artifact for iOS
