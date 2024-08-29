@@ -1,4 +1,5 @@
 # EMCompute
+[![Build](https://github.com/SkillfulElectro/EMCompute/actions/workflows/rust.yml/badge.svg)](https://github.com/SkillfulElectro/EMCompute/actions/workflows/rust.yml)
 - this library tries to take computing tasks on GPU for parallel processing in the simplest possible way for Rust/C/C++ and other languages which can work with C API
 - this project is successor to https://github.com/SkillfulElectro/core-compute.git and https://github.com/SkillfulElectro/core-compute_native.git
 
