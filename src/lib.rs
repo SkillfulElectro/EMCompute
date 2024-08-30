@@ -1,16 +1,22 @@
 use std::os::raw::c_char;
 use std::ffi::CStr;
+
 use wgpu::util::DeviceExt;
 use rayon::prelude::*;
 
-/// EMCompute v1.0.0 
-/// changes to the api :
-/// 1. adding GPUComputingBackend , GPUPowerSettings , GPUSpeedSettings 
-/// GPUMemorySettings enums to make configuration easier for C API better
-/// 2. adding GPUComputingConfig which will be part CKernel struct
-/// 3. from now user must sort the data based on the group of them in wgsl 
-/// code for more performance 
-///
+use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
+
+struct GPUCollection {
+    device : Arc<wgpu::Device> ,
+    queue : Arc<wgpu::Queue> ,
+}
+// hashing GPU res
+static mut GPU_RES_KEEPER : Option<Arc<Mutex<HashMap<GPUComputingConfig , GPUCollection>>>> = None;
+
+
+
+
 
 /// NOTE : on linux machines memory leak might happen if you use 
 /// vulkan backend until NVIDIA drivers for linux get fixed .
@@ -18,8 +24,11 @@ use rayon::prelude::*;
 ///
 
 
+
+
 #[repr(C)]
 #[derive(Clone , Debug)]
+#[derive(Eq, Hash, PartialEq)]
 /// computing backends of the api 
 pub enum GPUComputingBackend {
     /// targets all of the backends 
@@ -44,6 +53,7 @@ pub enum GPUComputingBackend {
 
 #[repr(C)]
 #[derive(Clone , Debug)]
+#[derive(Eq, Hash, PartialEq)]
 /// this enum is used to tell to API
 /// to setup GPU resources based on power saving rules or
 /// not
@@ -58,6 +68,7 @@ pub enum GPUPowerSettings {
 
 #[repr(C)]
 #[derive(Clone , Debug)]
+#[derive(Eq, Hash, PartialEq)]
 /// this enum affects speed of the api 
 /// by setting how much gpu resources
 /// are needed directly , if you take 
@@ -78,6 +89,7 @@ pub enum GPUSpeedSettings {
 
 #[repr(C)]
 #[derive(Clone , Debug)]
+#[derive(Eq, Hash, PartialEq)]
 /// this settings used to tell gpu pre information about 
 /// our work 
 pub enum GPUMemorySettings {
@@ -94,6 +106,7 @@ pub enum GPUMemorySettings {
 
 #[repr(C)]
 #[derive(Debug, Clone)]
+#[derive(Eq, Hash, PartialEq)]
 /// as config field you have to provide GPUComputingConfig which
 /// represent settings which you wanted
 pub struct GPUComputingConfig {
@@ -129,6 +142,8 @@ pub struct CKernel {
     /// by setting config you can customize behavior of the 
     /// gpu
     pub config : GPUComputingConfig ,
+
+    index : usize ,
 }
 
 #[no_mangle]
@@ -185,7 +200,21 @@ impl CKernel {
 
     // this function converts enums to
     // equivalent gpu resources
-    fn get_real_config(&self) -> (wgpu::Device , wgpu::Queue) {
+    fn get_real_config(&self) -> (Arc<wgpu::Device> , Arc<wgpu::Queue>) {
+
+        unsafe{
+            match &GPU_RES_KEEPER {
+                None => {
+                    GPU_RES_KEEPER = Some(Arc::new(Mutex::new(HashMap::new())));
+                },
+                Some(arci) => {
+                    let mut GPU_Data = arci.lock().unwrap();
+                    if GPU_Data.contains_key(&self.config) {
+                        return (Arc::clone(&GPU_Data[&self.config].device) , Arc::clone(&GPU_Data[&self.config].queue));
+                    }
+                }
+            }
+        }
         // println!("get real start");
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor{
@@ -276,8 +305,19 @@ impl CKernel {
                     .expect("ERROR : Adapter could not find the device");
 
         // println!("get real done");
+        unsafe{
+            let device = Arc::new(device);
+            let queue = Arc::new(queue);
+            let arci = GPU_RES_KEEPER.clone().unwrap();
+            let mut GPU_Data = arci.lock().unwrap();
 
-        (device , queue)
+            GPU_Data.insert(self.config.clone() , GPUCollection{
+                device : Arc::clone(&device) ,
+                queue : Arc::clone(&queue) ,
+            });
+
+            return (Arc::clone(&device) , Arc::clone(&queue));
+        }
     }
 }
 
@@ -329,6 +369,7 @@ pub struct GroupOfBinders {
     /// len of datas array
     pub datas_len : usize ,
 }
+
 
 
 #[no_mangle]
@@ -502,7 +543,7 @@ pub extern "C" fn compute(kernel : CKernel , data_for_gpu : *mut GroupOfBinders 
                     let mapped_data = buffer_slice.get_mapped_range();
 
 
-                    
+
 
 
                     data.par_iter_mut().zip(mapped_data.par_iter()).for_each(|(d, &value)| {

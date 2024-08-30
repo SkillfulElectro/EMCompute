@@ -1,6 +1,6 @@
 [package]
 name = "EMCompute"
-version = "1.0.0"
+version = "2.0.0"
 edition = "2021"
 authors = ["ElectroMutex"]
 description = "fast , simple and cross-platform parallel computing library"
@@ -10,11 +10,11 @@ homepage = "https://github.com/SkillfulElectro/EMCompute.git"
 repository = "https://github.com/SkillfulElectro/EMCompute.git"
 readme = "README.md"
 keywords = ["GPGPU" , "cross-platform" , "parallel" , "computing" , "fast"]
-categories = ["api-bindings"]
+categories = ["computing"]
 
 [lib]
 name = "EMCompute"
-crate-type = ["cdylib"]
+crate-type = ["cdylib" , "lib"]
 
 [dependencies]
 wgpu = "22"
