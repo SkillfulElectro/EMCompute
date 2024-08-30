@@ -14,7 +14,7 @@ categories = ["concurrency"]
 
 [lib]
 name = "EMCompute"
-crate-type = ["cdylib" , "lib"]
+crate-type = ["cdylib"]
 
 [dependencies]
 wgpu = "22"
