@@ -142,8 +142,6 @@ pub struct CKernel {
     /// by setting config you can customize behavior of the 
     /// gpu
     pub config : GPUComputingConfig ,
-
-    index : usize ,
 }
 
 #[no_mangle]
