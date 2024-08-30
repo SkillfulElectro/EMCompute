@@ -569,3 +569,11 @@ pub extern "C" fn compute(kernel : CKernel , data_for_gpu : *mut GroupOfBinders 
         return 0;
     }
 }
+
+#[no_mangle]
+/// experimental
+pub extern "C" fn free_compute_cache(){
+    unsafe {
+        GPU_RES_KEEPER = None;
+    }
+}
