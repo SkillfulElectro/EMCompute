@@ -10,7 +10,7 @@ homepage = "https://github.com/SkillfulElectro/EMCompute.git"
 repository = "https://github.com/SkillfulElectro/EMCompute.git"
 readme = "README.md"
 keywords = ["GPGPU" , "cross-platform" , "parallel" , "computing" , "fast"]
-categories = ["computing"]
+categories = ["concurrency"]
 
 [lib]
 name = "EMCompute"
