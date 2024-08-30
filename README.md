@@ -129,5 +129,9 @@ int main() {
 ```
 - check out example https://github.com/SkillfulElectro/EMCompute/tree/main/examples and Goodluck :)
 
+## NEWS
+- since version 2.0.0 the API does caching to prevent allocating GPU res and improve performance 
+- since version 2.1.0 you can deallocate API caches by calling free_compute_cache() function to deallocate the caches
+
 ## Contribution
 - if you find any problem or bug , ill be happy with your pull req or issue report 

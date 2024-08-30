@@ -11,7 +11,7 @@ struct GPUCollection {
     device : Arc<wgpu::Device> ,
     queue : Arc<wgpu::Queue> ,
 }
-// Caching GPU res
+// hashing GPU res
 static mut GPU_RES_KEEPER : Option<Arc<Mutex<HashMap<GPUComputingConfig , GPUCollection>>>> = None;
 
 
@@ -570,8 +570,14 @@ pub extern "C" fn compute(kernel : CKernel , data_for_gpu : *mut GroupOfBinders 
     }
 }
 
+
 #[no_mangle]
-/// experimental
+/// since version 2.0.0 api does 
+/// caching for gpu resources on the memory .
+/// the api does deallocates the caches 
+/// automatically , but in some cases 
+/// you might want to do it manually
+/// so just call this free_compute_cache();
 pub extern "C" fn free_compute_cache(){
     unsafe {
         GPU_RES_KEEPER = None;
