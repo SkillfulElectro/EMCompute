@@ -11,7 +11,7 @@ struct GPUCollection {
     device : Arc<wgpu::Device> ,
     queue : Arc<wgpu::Queue> ,
 }
-// hashing GPU res
+// Caching GPU res
 static mut GPU_RES_KEEPER : Option<Arc<Mutex<HashMap<GPUComputingConfig , GPUCollection>>>> = None;
 
 
