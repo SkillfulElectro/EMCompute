@@ -28,14 +28,6 @@ cdef extern from *:
 
 cdef extern from *:
 
-  # EMCompute v1.0.0
-  # changes to the api :
-  # 1. adding GPUComputingBackend , GPUPowerSettings , GPUSpeedSettings
-  # GPUMemorySettings enums to make configuration easier for C API better
-  # 2. adding GPUComputingConfig which will be part CKernel struct
-  # 3. from now user must sort the data based on the group of them in wgsl
-  # code for more performance
-  #
   # NOTE : on linux machines memory leak might happen if you use
   # vulkan backend until NVIDIA drivers for linux get fixed .
   #
@@ -134,6 +126,7 @@ cdef extern from *:
     # by setting config you can customize behavior of the
     # gpu
     GPUComputingConfig config;
+    uintptr_t index;
 
   # this struct is for passing
   # data based on its bind index
