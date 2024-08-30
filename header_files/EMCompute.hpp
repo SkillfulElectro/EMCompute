@@ -190,6 +190,14 @@ int32_t compute(CKernel kernel,
                 GroupOfBinders *data_for_gpu,
                 uintptr_t gpu_data_len);
 
+/// since version 2.0.0 api does
+/// caching for gpu resources on the memory .
+/// the api does deallocates the caches
+/// automatically , but in some cases
+/// you might want to do it manually
+/// so just call this free_compute_cache();
+void free_compute_cache();
+
 }  // extern "C"
 
 #endif  // EMCOMPUTE_H
