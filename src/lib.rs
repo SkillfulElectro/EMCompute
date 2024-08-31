@@ -13,8 +13,10 @@ struct GPUCollection {
 }
 // hashing GPU res
 static mut GPU_RES_KEEPER : Option<Arc<Mutex<HashMap<GPUComputingConfig , GPUCollection>>>> = None;
+static mut GPU_CUSTOM_RES_KEEPER : Option<Arc<Mutex<Vec<GPUCollection>>>> = None;
 
 
+use core::ops::Range;
 
 
 
@@ -142,6 +144,7 @@ pub struct CKernel {
     /// by setting config you can customize behavior of the 
     /// gpu
     pub config : GPUComputingConfig ,
+    pub customize : GPUCustomSettings ,
 }
 
 #[no_mangle]
@@ -163,7 +166,7 @@ pub extern "C" fn set_kernel_default_config(kernel: *mut CKernel) {
             backend: GPUComputingBackend::opengl,
             power: GPUPowerSettings::none,
             speed: GPUSpeedSettings::low_speed,
-            memory: GPUMemorySettings::prefer_memory,
+            memory: GPUMemorySettings::prefer_memory,   
         };
 
 
@@ -198,9 +201,22 @@ impl CKernel {
 
     // this function converts enums to
     // equivalent gpu resources
-    fn get_real_config(&self) -> (Arc<wgpu::Device> , Arc<wgpu::Queue>) {
+    fn get_real_config(&mut self) -> (Arc<wgpu::Device> , Arc<wgpu::Queue>) {
+
+        let mut is_custom = false;
 
         unsafe{
+            match &GPU_CUSTOM_RES_KEEPER {
+                None => {
+                    GPU_CUSTOM_RES_KEEPER = Some(Arc::new(Mutex::new(Vec::new())));
+                },
+                Some(arci) => {
+                    let mut GPU_Data = arci.lock().unwrap();
+                    if !(self.customize.index <= 0) && self.customize.index as usize <= GPU_Data.len() {
+                        return (Arc::clone(&GPU_Data[self.customize.index as usize].device) , Arc::clone(&GPU_Data[self.customize.index as usize].queue));
+                    }
+                }
+            }
             match &GPU_RES_KEEPER {
                 None => {
                     GPU_RES_KEEPER = Some(Arc::new(Mutex::new(HashMap::new())));
@@ -278,8 +294,10 @@ impl CKernel {
                             wgpu::Limits::downlevel_defaults()
                         },
                         GPUSpeedSettings::custom_speed => {
+                            is_custom = true;
+
                             // for now it will be set to downlevel_defaults as placeholderi
-                            wgpu::Limits::downlevel_defaults()
+                            self.customize.gpu_speed_custom.to_gpu_limits()
                         },
                         GPUSpeedSettings::default_speed => {
                             wgpu::Limits::default()
@@ -293,8 +311,11 @@ impl CKernel {
                             wgpu::MemoryHints::MemoryUsage
                         },
                         GPUMemorySettings::custom_memory => {
+                            is_custom = true;
                             // for now it will be set to MemoryUsage as placeholder
-                            wgpu::MemoryHints::MemoryUsage
+                            wgpu::MemoryHints::Manual{
+                                suballocated_device_memory_block_size : self.customize.gpu_memory_custom.to_rs_range(),
+                            }                       
                         },
                     },
                 },
@@ -306,13 +327,24 @@ impl CKernel {
         unsafe{
             let device = Arc::new(device);
             let queue = Arc::new(queue);
-            let arci = GPU_RES_KEEPER.clone().unwrap();
-            let mut GPU_Data = arci.lock().unwrap();
+            if !is_custom{
+                let arci = GPU_RES_KEEPER.clone().unwrap();
+                let mut GPU_Data = arci.lock().unwrap();
 
-            GPU_Data.insert(self.config.clone() , GPUCollection{
-                device : Arc::clone(&device) ,
-                queue : Arc::clone(&queue) ,
-            });
+                GPU_Data.insert(self.config.clone() , GPUCollection{
+                    device : Arc::clone(&device) ,
+                    queue : Arc::clone(&queue) ,
+                });
+            } else {
+                let arci = GPU_CUSTOM_RES_KEEPER.clone().unwrap();
+                let mut GPU_Data = arci.lock().unwrap();
+
+                self.customize.index = GPU_Data.len() as i32;
+                GPU_Data.push(GPUCollection{
+                    device : Arc::clone(&device) ,
+                    queue : Arc::clone(&queue) ,
+                });
+            }
 
             return (Arc::clone(&device) , Arc::clone(&queue));
         }
@@ -337,6 +369,148 @@ pub struct DataBinder {
     /// in gpu side the type of this data will 
     /// be set based on CKernel code you provided
     pub data: *mut u8,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone)]
+#[derive(Eq, Hash, PartialEq)]
+pub struct GPUCustomSettings {
+    pub gpu_speed_custom : GPUSpeedCustom ,
+    pub gpu_memory_custom : GPUMemoryCustom ,
+    pub index : i32 ,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone , Default)]
+#[derive(Eq, Hash, PartialEq)]
+pub struct GPUMemoryCustom {
+    pub start : u64 ,
+    pub end : u64 ,
+}
+
+impl GPUMemoryCustom{
+    fn to_rs_range(&self) -> Range<u64> {
+        std::ops::Range{start : self.start , end : self.end}
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Clone , Default)]
+#[derive(Eq, Hash, PartialEq)]
+pub struct GPUSpeedCustom {
+    pub max_texture_dimension_1d: u32,
+    pub max_texture_dimension_2d: u32,
+    pub max_texture_dimension_3d: u32,
+    pub max_texture_array_layers: u32,
+    pub max_bind_groups: u32,
+    pub max_bindings_per_bind_group: u32,
+    pub max_dynamic_uniform_buffers_per_pipeline_layout: u32,
+    pub max_dynamic_storage_buffers_per_pipeline_layout: u32,
+    pub max_sampled_textures_per_shader_stage: u32,
+    pub max_samplers_per_shader_stage: u32,
+    pub max_storage_buffers_per_shader_stage: u32,
+    pub max_storage_textures_per_shader_stage: u32,
+    pub max_uniform_buffers_per_shader_stage: u32,
+    pub max_uniform_buffer_binding_size: u32,
+    pub max_storage_buffer_binding_size: u32,
+    pub max_vertex_buffers: u32,
+    pub max_buffer_size: u64,
+    pub max_vertex_attributes: u32,
+    pub max_vertex_buffer_array_stride: u32,
+    pub min_uniform_buffer_offset_alignment: u32,
+    pub min_storage_buffer_offset_alignment: u32,
+    pub max_inter_stage_shader_components: u32,
+    pub max_color_attachments: u32,
+    pub max_color_attachment_bytes_per_sample: u32,
+    pub max_compute_workgroup_storage_size: u32,
+    pub max_compute_invocations_per_workgroup: u32,
+    pub max_compute_workgroup_size_x: u32,
+    pub max_compute_workgroup_size_y: u32,
+    pub max_compute_workgroup_size_z: u32,
+    pub max_compute_workgroups_per_dimension: u32,
+    pub min_subgroup_size: u32,
+    pub max_subgroup_size: u32,
+    pub max_push_constant_size: u32,
+    pub max_non_sampler_bindings: u32,
+}
+
+impl GPUSpeedCustom {
+    fn set_all_zero() -> Self {
+        Self {
+            max_texture_dimension_1d: 0,
+            max_texture_dimension_2d: 0,
+            max_texture_dimension_3d: 0,
+            max_texture_array_layers: 0,
+            max_bind_groups: 0,
+            max_bindings_per_bind_group: 0,
+            max_dynamic_uniform_buffers_per_pipeline_layout: 0,
+            max_dynamic_storage_buffers_per_pipeline_layout: 0,
+            max_sampled_textures_per_shader_stage: 0,
+            max_samplers_per_shader_stage: 0,
+            max_storage_buffers_per_shader_stage: 0,
+            max_storage_textures_per_shader_stage: 0,
+            max_uniform_buffers_per_shader_stage: 0,
+            max_uniform_buffer_binding_size: 0,
+            max_storage_buffer_binding_size: 0,
+            max_vertex_buffers: 0,
+            max_buffer_size: 0,
+            max_vertex_attributes: 0,
+            max_vertex_buffer_array_stride: 0,
+            min_uniform_buffer_offset_alignment: 0,
+            min_storage_buffer_offset_alignment: 0,
+            max_inter_stage_shader_components: 0,
+            max_color_attachments: 0,
+            max_color_attachment_bytes_per_sample: 0,
+            max_compute_workgroup_storage_size: 0,
+            max_compute_invocations_per_workgroup: 0,
+            max_compute_workgroup_size_x: 0,
+            max_compute_workgroup_size_y: 0,
+            max_compute_workgroup_size_z: 0,
+            max_compute_workgroups_per_dimension: 0,
+            min_subgroup_size: 0,
+            max_subgroup_size: 0,
+            max_push_constant_size: 0,
+            max_non_sampler_bindings: 0,
+        }
+    }
+    fn to_gpu_limits(&self) -> wgpu::Limits {
+        wgpu::Limits {
+            max_texture_dimension_1d: self.max_texture_dimension_1d,
+            max_texture_dimension_2d: self.max_texture_dimension_2d,
+            max_texture_dimension_3d: self.max_texture_dimension_3d,
+            max_texture_array_layers: self.max_texture_array_layers,
+            max_bind_groups: self.max_bind_groups,
+            max_bindings_per_bind_group: self.max_bindings_per_bind_group,
+            max_dynamic_uniform_buffers_per_pipeline_layout: self.max_dynamic_uniform_buffers_per_pipeline_layout,
+            max_dynamic_storage_buffers_per_pipeline_layout: self.max_dynamic_storage_buffers_per_pipeline_layout,
+            max_sampled_textures_per_shader_stage: self.max_sampled_textures_per_shader_stage,
+            max_samplers_per_shader_stage: self.max_samplers_per_shader_stage,
+            max_storage_buffers_per_shader_stage: self.max_storage_buffers_per_shader_stage,
+            max_storage_textures_per_shader_stage: self.max_storage_textures_per_shader_stage,
+            max_uniform_buffers_per_shader_stage: self.max_uniform_buffers_per_shader_stage,
+            max_uniform_buffer_binding_size: self.max_uniform_buffer_binding_size,
+            max_storage_buffer_binding_size: self.max_storage_buffer_binding_size,
+            max_vertex_buffers: self.max_vertex_buffers,
+            max_buffer_size: self.max_buffer_size,
+            max_vertex_attributes: self.max_vertex_attributes,
+            max_vertex_buffer_array_stride: self.max_vertex_buffer_array_stride,
+            min_uniform_buffer_offset_alignment: self.min_uniform_buffer_offset_alignment,
+            min_storage_buffer_offset_alignment: self.min_storage_buffer_offset_alignment,
+            max_inter_stage_shader_components: self.max_inter_stage_shader_components,
+            max_color_attachments: self.max_color_attachments,
+            max_color_attachment_bytes_per_sample: self.max_color_attachment_bytes_per_sample,
+            max_compute_workgroup_storage_size: self.max_compute_workgroup_storage_size,
+            max_compute_invocations_per_workgroup: self.max_compute_invocations_per_workgroup,
+            max_compute_workgroup_size_x: self.max_compute_workgroup_size_x,
+            max_compute_workgroup_size_y: self.max_compute_workgroup_size_y,
+            max_compute_workgroup_size_z: self.max_compute_workgroup_size_z,
+            max_compute_workgroups_per_dimension: self.max_compute_workgroups_per_dimension,
+            min_subgroup_size: self.min_subgroup_size,
+            max_subgroup_size: self.max_subgroup_size,
+            max_push_constant_size: self.max_push_constant_size,
+            max_non_sampler_bindings: self.max_non_sampler_bindings,
+        }
+    }
 }
 
 impl DataBinder {
@@ -382,10 +556,12 @@ pub struct GroupOfBinders {
 /// in the most performant possible way 
 ///
 /// if you find any bug or any problem , help us to fix it -> https://github.com/SkillfulElectro/EMCompute.git
-pub extern "C" fn compute(kernel : CKernel , data_for_gpu : *mut GroupOfBinders , gpu_data_len : usize) -> i32 {
+pub extern "C" fn compute(kernel : *mut CKernel , data_for_gpu : *mut GroupOfBinders , gpu_data_len : usize) -> i32 {
 
     {
         // println!("compute start");
+        //
+        let mut kernel = unsafe {&mut *kernel};
 
 
         if data_for_gpu.is_null(){
@@ -579,5 +755,6 @@ pub extern "C" fn compute(kernel : CKernel , data_for_gpu : *mut GroupOfBinders 
 pub extern "C" fn free_compute_cache(){
     unsafe {
         GPU_RES_KEEPER = None;
+        GPU_CUSTOM_RES_KEEPER = None;
     }
 }
