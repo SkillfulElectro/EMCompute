@@ -19,7 +19,7 @@ struct GPUCollection {
 
 static mut GPU_RES_KEEPER : Option<Arc<Mutex<Vec<GPUCollection>>>> = None;
 
-static mut GPU_KERNELS_KEEPER : Option<Arc<Mutex<Vec<GPUCollection>>>> = None;
+static mut GPU_KERNELS_KEEPER : Option<Arc<Mutex<Vec<wgpu::ShaderModule>>>> = None;
 
 
 
