@@ -61,9 +61,9 @@ cdef extern from *:
     prefer_performance # = 0,
     # our app will need to allocate memory on gpu side
     prefer_memory # = 1,
-    # will be supported in next versions , by default for now it is set to
-    # prefer_memory . in next versions you can tell how much memory
-    # you need to allocate on gpu side
+    # if you set this , you have to set customize.gpu_memory_custom
+    # this variable will be used for memory allocation in gpu
+    # it sets min and max of memory you need in gpu side
     custom_memory # = 3,
 
   # this enum is used to tell to API
@@ -106,6 +106,59 @@ cdef extern from *:
     # tell to gpu about your memory usage
     GPUMemorySettings memory;
 
+  # this struct is used for advance customizations refered as
+  # custom_speed settings
+  cdef struct GPUSpeedCustom:
+    uint32_t max_texture_dimension_1d;
+    uint32_t max_texture_dimension_2d;
+    uint32_t max_texture_dimension_3d;
+    uint32_t max_texture_array_layers;
+    uint32_t max_bind_groups;
+    uint32_t max_bindings_per_bind_group;
+    uint32_t max_dynamic_uniform_buffers_per_pipeline_layout;
+    uint32_t max_dynamic_storage_buffers_per_pipeline_layout;
+    uint32_t max_sampled_textures_per_shader_stage;
+    uint32_t max_samplers_per_shader_stage;
+    uint32_t max_storage_buffers_per_shader_stage;
+    uint32_t max_storage_textures_per_shader_stage;
+    uint32_t max_uniform_buffers_per_shader_stage;
+    uint32_t max_uniform_buffer_binding_size;
+    uint32_t max_storage_buffer_binding_size;
+    uint32_t max_vertex_buffers;
+    uint64_t max_buffer_size;
+    uint32_t max_vertex_attributes;
+    uint32_t max_vertex_buffer_array_stride;
+    uint32_t min_uniform_buffer_offset_alignment;
+    uint32_t min_storage_buffer_offset_alignment;
+    uint32_t max_inter_stage_shader_components;
+    uint32_t max_color_attachments;
+    uint32_t max_color_attachment_bytes_per_sample;
+    uint32_t max_compute_workgroup_storage_size;
+    uint32_t max_compute_invocations_per_workgroup;
+    uint32_t max_compute_workgroup_size_x;
+    uint32_t max_compute_workgroup_size_y;
+    uint32_t max_compute_workgroup_size_z;
+    uint32_t max_compute_workgroups_per_dimension;
+    uint32_t min_subgroup_size;
+    uint32_t max_subgroup_size;
+    uint32_t max_push_constant_size;
+    uint32_t max_non_sampler_bindings;
+
+  # with this struct you set min - max of
+  # memory you will need in gpu side
+  cdef struct GPUMemoryCustom:
+    # min mem needed in gpu side
+    uint64_t min;
+    # max mem needed in gpu side
+    uint64_t max;
+
+  # this struct represents custom settings
+  cdef struct GPUCustomSettings:
+    # this variable keeps custom speed settings
+    GPUSpeedCustom gpu_speed_custom;
+    # this variable keeps memory custom settings
+    GPUMemoryCustom gpu_memory_custom;
+
   # CKernel which will represent your GPU task
   # like how Manifest.xml does in an android
   # project
@@ -126,7 +179,20 @@ cdef extern from *:
     # by setting config you can customize behavior of the
     # gpu
     GPUComputingConfig config;
-    uintptr_t index;
+    # since v3.0.0 when you set any of configs to
+    # custom , you can set custom configs to it
+    # by setting your customizations on equivalent field of
+    # customize
+    GPUCustomSettings customize;
+    # since v3.0.0 caching method is based
+    # on the setting_cache_index
+    # this changes happened to caching
+    # by granting the full control to the user .
+    # when you for first time use a config and customize , api will
+    # store them on dynamic array and set this index automatically .
+    # NOTE : 1. if you use a config for first time use negative index - 2. if
+    # you used a config before keep its index to use it
+    int32_t setting_cache_index;
 
   # this struct is for passing
   # data based on its bind index
@@ -161,7 +227,11 @@ cdef extern from *:
 
   # because setting CKernel config can be annoying if you just
   # want to do simple task , this function provides general
-  # config which will meet most of your needs
+  # config which will meet most of your needs . this function
+  # sets setting_cache_index to -1 , if you used this function before
+  # instead of using this function again . you can use the index from
+  # before . also if you dont use that index it will cause extra gpu
+  # resource creation
   void set_kernel_default_config(CKernel *kernel);
 
   # the simple and compact function for sending
@@ -175,14 +245,14 @@ cdef extern from *:
   # in the most performant possible way
   #
   # if you find any bug or any problem , help us to fix it -> https://github.com/SkillfulElectro/EMCompute.git
-  int32_t compute(CKernel kernel,
+  int32_t compute(CKernel *kernel,
                   GroupOfBinders *data_for_gpu,
                   uintptr_t gpu_data_len);
 
   # since version 2.0.0 api does
   # caching for gpu resources on the memory .
-  # the api does deallocates the caches
+  # the api does deallocate the caches
   # automatically , but in some cases
   # you might want to do it manually
-  # so just call this free_compute_cache();
+  # so just call free_compute_cache();
   void free_compute_cache();
