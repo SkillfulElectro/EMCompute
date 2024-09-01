@@ -722,3 +722,19 @@ pub extern "C" fn free_compute_cache(){
         GPU_RES_KEEPER = None;
     }
 }
+
+fn cchar_as_string(cstri : *const c_char) -> Option<String> {
+        unsafe {
+            if cstri.is_null() {
+                None    
+            } else {
+                Some(CStr::from_ptr(cstri).to_string_lossy().into_owned())
+            }
+        }
+}
+
+#[no_mangle]
+pub extern "C" fn register_compute_shader(code : *const c_char) -> usize {
+    let code = cchar_as_string(code).expect("NULL provided ! please pass shader code .");
+    return 2;
+}
