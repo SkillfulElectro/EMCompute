@@ -54,7 +54,7 @@ int main() {
   GroupOfBinders groups[] = {wrapper};
 
   // for (int i = 0 ; i< 1000000 ;++i){
-    compute(kernel, groups, 1);
+    compute(&kernel, groups, 1);
   // }
 
   // Check results
