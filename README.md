@@ -15,6 +15,7 @@
 - for using with C/C++ and Cython check out https://github.com/SkillfulElectro/EMCompute.git . for getting prebuilt binaries for your OS check the latest action artifacts it will contain .h , .hpp and .pyx header files and prebuilt binaries (you can read the comments for better understanding)
 
 ### Tutorial
+- this tour is written for v2.1.1 and beyond , after that small changes happend to the api which can be followed from the NEWS section of this md file
 - first things which you have to create is struct of type CKernel which stands for Computing Kernel , this struct will act as an manifest of your task which must be done by GPU 
 ```c
 typedef struct CKernel {
@@ -132,6 +133,11 @@ int main() {
 ## NEWS
 - since version 2.0.0 the API does caching to prevent allocating GPU res and improve performance 
 - since version 2.1.0 you can deallocate API caches by calling free_compute_cache() function to deallocate the caches
+- since version 3.0.0 customize and setting_cache_index fields added to CKernel struct , compute function now gets pointer to CKernel var 
+- since version 3.0.0 GPUCustomSettings , GPUMemoryCustom and GPUSpeedCustom added to API for setting customization for custom_speed and custom_memory (for more details about them read comments on .h , .hpp and .pyx files)
+- since version 3.0.0 if custom_speed or custom_memory are set in config field of CKernel , equivalent fields of customize will be checked
+- since version 3.0.0 caching method changed and is controled by setting_cache_index , if you set it to negative values which set_kernel_default_config function does ; api will allocate new gpu resources , so if you have used a config before you must keep track of it unless you want to go out of memory
+
 
 ## Contribution
 - if you find any problem or bug , ill be happy with your pull req or issue report 

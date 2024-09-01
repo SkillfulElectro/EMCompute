@@ -5,18 +5,22 @@ use wgpu::util::DeviceExt;
 use rayon::prelude::*;
 
 use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
+
+
+
+use core::ops::Range;
 
 struct GPUCollection {
     device : Arc<wgpu::Device> ,
     queue : Arc<wgpu::Queue> ,
 }
-// hashing GPU res
-static mut GPU_RES_KEEPER : Option<Arc<Mutex<HashMap<GPUComputingConfig , GPUCollection>>>> = None;
-static mut GPU_CUSTOM_RES_KEEPER : Option<Arc<Mutex<Vec<GPUCollection>>>> = None;
 
 
-use core::ops::Range;
+
+static mut GPU_RES_KEEPER : Option<Arc<Mutex<Vec<GPUCollection>>>> = None;
+
+
+
 
 
 
@@ -30,7 +34,6 @@ use core::ops::Range;
 
 #[repr(C)]
 #[derive(Clone , Debug)]
-#[derive(Eq, Hash, PartialEq)]
 /// computing backends of the api 
 pub enum GPUComputingBackend {
     /// targets all of the backends 
@@ -55,7 +58,6 @@ pub enum GPUComputingBackend {
 
 #[repr(C)]
 #[derive(Clone , Debug)]
-#[derive(Eq, Hash, PartialEq)]
 /// this enum is used to tell to API
 /// to setup GPU resources based on power saving rules or
 /// not
@@ -70,7 +72,6 @@ pub enum GPUPowerSettings {
 
 #[repr(C)]
 #[derive(Clone , Debug)]
-#[derive(Eq, Hash, PartialEq)]
 /// this enum affects speed of the api 
 /// by setting how much gpu resources
 /// are needed directly , if you take 
@@ -91,7 +92,6 @@ pub enum GPUSpeedSettings {
 
 #[repr(C)]
 #[derive(Clone , Debug)]
-#[derive(Eq, Hash, PartialEq)]
 /// this settings used to tell gpu pre information about 
 /// our work 
 pub enum GPUMemorySettings {
@@ -100,15 +100,14 @@ pub enum GPUMemorySettings {
     prefer_performance = 0 ,
     /// our app will need to allocate memory on gpu side 
     prefer_memory = 1 ,
-    /// will be supported in next versions , by default for now it is set to 
-    /// prefer_memory . in next versions you can tell how much memory 
-    /// you need to allocate on gpu side
+    /// if you set this , you have to set customize.gpu_memory_custom 
+    /// this variable will be used for memory allocation in gpu 
+    /// it sets min and max of memory you need in gpu side 
     custom_memory = 3 ,
 }
 
 #[repr(C)]
 #[derive(Debug, Clone)]
-#[derive(Eq, Hash, PartialEq)]
 /// as config field you have to provide GPUComputingConfig which
 /// represent settings which you wanted
 pub struct GPUComputingConfig {
@@ -144,13 +143,30 @@ pub struct CKernel {
     /// by setting config you can customize behavior of the 
     /// gpu
     pub config : GPUComputingConfig ,
+    /// since v3.0.0 when you set any of configs to 
+    /// custom , you can set custom configs to it 
+    /// by setting your customizations on equivalent field of 
+    /// customize 
     pub customize : GPUCustomSettings ,
+    /// since v3.0.0 caching method is based 
+    /// on the setting_cache_index 
+    /// this changes happened to caching 
+    /// by granting the full control to the user .
+    /// when you for first time use a config and customize , api will 
+    /// store them on dynamic array and set this index automatically .
+    /// NOTE : 1. if you use a config for first time use negative index - 2. if 
+    /// you used a config before keep its index to use it
+    pub setting_cache_index : i32 ,
 }
 
 #[no_mangle]
 /// because setting CKernel config can be annoying if you just 
 /// want to do simple task , this function provides general 
-/// config which will meet most of your needs
+/// config which will meet most of your needs . this function
+/// sets setting_cache_index to -1 , if you used this function before 
+/// instead of using this function again . you can use the index from 
+/// before . also if you dont use that index it will cause extra gpu 
+/// resource creation 
 pub extern "C" fn set_kernel_default_config(kernel: *mut CKernel) {
     // println!("set start"); 
     if kernel.is_null() {
@@ -168,6 +184,8 @@ pub extern "C" fn set_kernel_default_config(kernel: *mut CKernel) {
             speed: GPUSpeedSettings::low_speed,
             memory: GPUMemorySettings::prefer_memory,   
         };
+
+        kernel.setting_cache_index = -1;
 
 
     }
@@ -203,28 +221,16 @@ impl CKernel {
     // equivalent gpu resources
     fn get_real_config(&mut self) -> (Arc<wgpu::Device> , Arc<wgpu::Queue>) {
 
-        let mut is_custom = false;
 
         unsafe{
-            match &GPU_CUSTOM_RES_KEEPER {
-                None => {
-                    GPU_CUSTOM_RES_KEEPER = Some(Arc::new(Mutex::new(Vec::new())));
-                },
-                Some(arci) => {
-                    let mut GPU_Data = arci.lock().unwrap();
-                    if !(self.customize.index <= 0) && self.customize.index as usize <= GPU_Data.len() {
-                        return (Arc::clone(&GPU_Data[self.customize.index as usize].device) , Arc::clone(&GPU_Data[self.customize.index as usize].queue));
-                    }
-                }
-            }
             match &GPU_RES_KEEPER {
                 None => {
-                    GPU_RES_KEEPER = Some(Arc::new(Mutex::new(HashMap::new())));
+                    GPU_RES_KEEPER = Some(Arc::new(Mutex::new(Vec::new())));
                 },
                 Some(arci) => {
                     let mut GPU_Data = arci.lock().unwrap();
-                    if GPU_Data.contains_key(&self.config) {
-                        return (Arc::clone(&GPU_Data[&self.config].device) , Arc::clone(&GPU_Data[&self.config].queue));
+                    if !(self.setting_cache_index < 0) && (self.setting_cache_index as usize) < GPU_Data.len() {
+                        return (Arc::clone(&GPU_Data[self.setting_cache_index as usize].device) , Arc::clone(&GPU_Data[self.setting_cache_index as usize].queue));
                     }
                 }
             }
@@ -279,7 +285,7 @@ impl CKernel {
                 },
                 ..Default::default()
             }))
-        .expect("ERROR : failed to get adapter");
+        .expect("ERROR : could not allocate gpu resources which match your configs");
 
         let (device, queue) = pollster::block_on(adapter
             .request_device(
@@ -294,9 +300,7 @@ impl CKernel {
                             wgpu::Limits::downlevel_defaults()
                         },
                         GPUSpeedSettings::custom_speed => {
-                            is_custom = true;
 
-                            // for now it will be set to downlevel_defaults as placeholderi
                             self.customize.gpu_speed_custom.to_gpu_limits()
                         },
                         GPUSpeedSettings::default_speed => {
@@ -311,8 +315,8 @@ impl CKernel {
                             wgpu::MemoryHints::MemoryUsage
                         },
                         GPUMemorySettings::custom_memory => {
-                            is_custom = true;
-                            // for now it will be set to MemoryUsage as placeholder
+
+
                             wgpu::MemoryHints::Manual{
                                 suballocated_device_memory_block_size : self.customize.gpu_memory_custom.to_rs_range(),
                             }                       
@@ -321,30 +325,21 @@ impl CKernel {
                 },
                 None,
                 ))
-                    .expect("ERROR : Adapter could not find the device");
+                    .expect("ERROR : could not allocate gpu resources which match your configs");
 
         // println!("get real done");
         unsafe{
             let device = Arc::new(device);
             let queue = Arc::new(queue);
-            if !is_custom{
+
                 let arci = GPU_RES_KEEPER.clone().unwrap();
                 let mut GPU_Data = arci.lock().unwrap();
 
-                GPU_Data.insert(self.config.clone() , GPUCollection{
-                    device : Arc::clone(&device) ,
-                    queue : Arc::clone(&queue) ,
-                });
-            } else {
-                let arci = GPU_CUSTOM_RES_KEEPER.clone().unwrap();
-                let mut GPU_Data = arci.lock().unwrap();
-
-                self.customize.index = GPU_Data.len() as i32;
+                self.setting_cache_index = GPU_Data.len() as i32;
                 GPU_Data.push(GPUCollection{
                     device : Arc::clone(&device) ,
                     queue : Arc::clone(&queue) ,
                 });
-            }
 
             return (Arc::clone(&device) , Arc::clone(&queue));
         }
@@ -373,30 +368,35 @@ pub struct DataBinder {
 
 #[repr(C)]
 #[derive(Debug, Clone)]
-#[derive(Eq, Hash, PartialEq)]
+/// this struct represents custom settings 
 pub struct GPUCustomSettings {
+    /// this variable keeps custom speed settings 
     pub gpu_speed_custom : GPUSpeedCustom ,
+    /// this variable keeps memory custom settings 
     pub gpu_memory_custom : GPUMemoryCustom ,
-    pub index : i32 ,
 }
 
 #[repr(C)]
 #[derive(Debug, Clone , Default)]
-#[derive(Eq, Hash, PartialEq)]
+/// with this struct you set min - max of 
+/// memory you will need in gpu side 
 pub struct GPUMemoryCustom {
-    pub start : u64 ,
-    pub end : u64 ,
+    /// min mem needed in gpu side 
+    pub min : u64 ,
+    /// max mem needed in gpu side 
+    pub max : u64 ,
 }
 
 impl GPUMemoryCustom{
     fn to_rs_range(&self) -> Range<u64> {
-        std::ops::Range{start : self.start , end : self.end}
+        std::ops::Range{start : self.min , end : self.max}
     }
 }
 
 #[repr(C)]
 #[derive(Debug, Clone , Default)]
-#[derive(Eq, Hash, PartialEq)]
+/// this struct is used for advance customizations refered as 
+/// custom_speed settings 
 pub struct GPUSpeedCustom {
     pub max_texture_dimension_1d: u32,
     pub max_texture_dimension_2d: u32,
@@ -435,44 +435,6 @@ pub struct GPUSpeedCustom {
 }
 
 impl GPUSpeedCustom {
-    fn set_all_zero() -> Self {
-        Self {
-            max_texture_dimension_1d: 0,
-            max_texture_dimension_2d: 0,
-            max_texture_dimension_3d: 0,
-            max_texture_array_layers: 0,
-            max_bind_groups: 0,
-            max_bindings_per_bind_group: 0,
-            max_dynamic_uniform_buffers_per_pipeline_layout: 0,
-            max_dynamic_storage_buffers_per_pipeline_layout: 0,
-            max_sampled_textures_per_shader_stage: 0,
-            max_samplers_per_shader_stage: 0,
-            max_storage_buffers_per_shader_stage: 0,
-            max_storage_textures_per_shader_stage: 0,
-            max_uniform_buffers_per_shader_stage: 0,
-            max_uniform_buffer_binding_size: 0,
-            max_storage_buffer_binding_size: 0,
-            max_vertex_buffers: 0,
-            max_buffer_size: 0,
-            max_vertex_attributes: 0,
-            max_vertex_buffer_array_stride: 0,
-            min_uniform_buffer_offset_alignment: 0,
-            min_storage_buffer_offset_alignment: 0,
-            max_inter_stage_shader_components: 0,
-            max_color_attachments: 0,
-            max_color_attachment_bytes_per_sample: 0,
-            max_compute_workgroup_storage_size: 0,
-            max_compute_invocations_per_workgroup: 0,
-            max_compute_workgroup_size_x: 0,
-            max_compute_workgroup_size_y: 0,
-            max_compute_workgroup_size_z: 0,
-            max_compute_workgroups_per_dimension: 0,
-            min_subgroup_size: 0,
-            max_subgroup_size: 0,
-            max_push_constant_size: 0,
-            max_non_sampler_bindings: 0,
-        }
-    }
     fn to_gpu_limits(&self) -> wgpu::Limits {
         wgpu::Limits {
             max_texture_dimension_1d: self.max_texture_dimension_1d,
@@ -513,6 +475,7 @@ impl GPUSpeedCustom {
     }
 }
 
+/*
 impl DataBinder {
     // this function is for future implementions
     unsafe fn data_as_vec(&self) -> Option<Vec<u8>> {
@@ -524,6 +487,7 @@ impl DataBinder {
         }
     }
 }
+*/
 
 #[repr(C)]
 #[derive(Debug, Clone)]
@@ -562,6 +526,7 @@ pub extern "C" fn compute(kernel : *mut CKernel , data_for_gpu : *mut GroupOfBin
         // println!("compute start");
         //
         let mut kernel = unsafe {&mut *kernel};
+        // println!("{:?}" , kernel.index);
 
 
         if data_for_gpu.is_null(){
@@ -748,13 +713,12 @@ pub extern "C" fn compute(kernel : *mut CKernel , data_for_gpu : *mut GroupOfBin
 #[no_mangle]
 /// since version 2.0.0 api does 
 /// caching for gpu resources on the memory .
-/// the api does deallocates the caches 
+/// the api does deallocate the caches 
 /// automatically , but in some cases 
 /// you might want to do it manually
-/// so just call this free_compute_cache();
+/// so just call free_compute_cache();
 pub extern "C" fn free_compute_cache(){
     unsafe {
         GPU_RES_KEEPER = None;
-        GPU_CUSTOM_RES_KEEPER = None;
     }
 }
