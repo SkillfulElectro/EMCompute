@@ -167,6 +167,54 @@ typedef struct GPUComputingConfig {
   enum GPUMemorySettings memory;
 } GPUComputingConfig;
 
+typedef struct GPUSpeedCustom {
+  uint32_t max_texture_dimension_1d;
+  uint32_t max_texture_dimension_2d;
+  uint32_t max_texture_dimension_3d;
+  uint32_t max_texture_array_layers;
+  uint32_t max_bind_groups;
+  uint32_t max_bindings_per_bind_group;
+  uint32_t max_dynamic_uniform_buffers_per_pipeline_layout;
+  uint32_t max_dynamic_storage_buffers_per_pipeline_layout;
+  uint32_t max_sampled_textures_per_shader_stage;
+  uint32_t max_samplers_per_shader_stage;
+  uint32_t max_storage_buffers_per_shader_stage;
+  uint32_t max_storage_textures_per_shader_stage;
+  uint32_t max_uniform_buffers_per_shader_stage;
+  uint32_t max_uniform_buffer_binding_size;
+  uint32_t max_storage_buffer_binding_size;
+  uint32_t max_vertex_buffers;
+  uint64_t max_buffer_size;
+  uint32_t max_vertex_attributes;
+  uint32_t max_vertex_buffer_array_stride;
+  uint32_t min_uniform_buffer_offset_alignment;
+  uint32_t min_storage_buffer_offset_alignment;
+  uint32_t max_inter_stage_shader_components;
+  uint32_t max_color_attachments;
+  uint32_t max_color_attachment_bytes_per_sample;
+  uint32_t max_compute_workgroup_storage_size;
+  uint32_t max_compute_invocations_per_workgroup;
+  uint32_t max_compute_workgroup_size_x;
+  uint32_t max_compute_workgroup_size_y;
+  uint32_t max_compute_workgroup_size_z;
+  uint32_t max_compute_workgroups_per_dimension;
+  uint32_t min_subgroup_size;
+  uint32_t max_subgroup_size;
+  uint32_t max_push_constant_size;
+  uint32_t max_non_sampler_bindings;
+} GPUSpeedCustom;
+
+typedef struct GPUMemoryCustom {
+  uint64_t start;
+  uint64_t end;
+} GPUMemoryCustom;
+
+typedef struct GPUCustomSettings {
+  struct GPUSpeedCustom gpu_speed_custom;
+  struct GPUMemoryCustom gpu_memory_custom;
+  int32_t index;
+} GPUCustomSettings;
+
 /**
  * CKernel which will represent your GPU task
  * like how Manifest.xml does in an android
@@ -201,7 +249,7 @@ typedef struct CKernel {
    * gpu
    */
   struct GPUComputingConfig config;
-  uintptr_t index;
+  struct GPUCustomSettings customize;
 } CKernel;
 
 /**
@@ -273,7 +321,7 @@ void set_kernel_default_config(struct CKernel *kernel);
  *
  * if you find any bug or any problem , help us to fix it -> https://github.com/SkillfulElectro/EMCompute.git
  */
-int32_t compute(struct CKernel kernel,
+int32_t compute(struct CKernel *kernel,
                 struct GroupOfBinders *data_for_gpu,
                 uintptr_t gpu_data_len);
 
