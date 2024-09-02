@@ -29,10 +29,6 @@ SOFTWARE.*/
 #include <stdlib.h>
 
 /**
- * NOTE : on linux machines memory leak might happen if you use
- * vulkan backend until NVIDIA drivers for linux get fixed .
- *
- *
  * computing backends of the api
  */
 typedef enum GPUComputingBackend {
@@ -256,39 +252,19 @@ typedef struct CKernel {
    */
   uint32_t z;
   /**
-   * this is a kernel code which must be in wgsl for now
-   * more shading languages will be supported in the future
+   * since v4.0.0 instead of directly passing
+   * kernel code , you have to pass return
+   * value of register_computing_kernel_code
+   * to this field
    */
-  const char *code;
+  uintptr_t kernel_code_index;
   /**
-   * this part in the code , tell to the api which
-   * function in the code must be called by gpu
-   * when the task is sent to gpu
+   * since v4.0.0 instead of directly passing
+   * configs of your computing task
+   * you have to create_computing_gpu_resources
+   * return value to this field
    */
-  const char *code_entry_point;
-  /**
-   * by setting config you can customize behavior of the
-   * gpu
-   */
-  struct GPUComputingConfig config;
-  /**
-   * since v3.0.0 when you set any of configs to
-   * custom , you can set custom configs to it
-   * by setting your customizations on equivalent field of
-   * customize
-   */
-  struct GPUCustomSettings customize;
-  /**
-   * since v3.0.0 caching method is based
-   * on the setting_cache_index
-   * this changes happened to caching
-   * by granting the full control to the user .
-   * when you for first time use a config and customize , api will
-   * store them on dynamic array and set this index automatically .
-   * NOTE : 1. if you use a config for first time use negative index - 2. if
-   * you used a config before keep its index to use it
-   */
-  int32_t setting_cache_index;
+  uintptr_t config_index;
 } CKernel;
 
 /**
@@ -341,15 +317,41 @@ typedef struct GroupOfBinders {
 } GroupOfBinders;
 
 /**
+ * since v4.0.0 you must create_computing_gpu_resources
+ * it will return gpu_res_descriptor as uintptr_t (usize)
+ * and you have to pass it as config_index value to
+ * CKernel variable
+ */
+uintptr_t create_computing_gpu_resources(struct GPUComputingConfig config,
+                                         struct GPUCustomSettings customize);
+
+/**
+ * since v4.0.0 your kernel code must be registered before
+ * you want to use it . gpu_res_index is gpu resource descriptor
+ * which you get from create_computing_gpu_resources .
+ */
+uintptr_t register_computing_kernel_code(uintptr_t gpu_res_index,
+                                         const char *code,
+                                         const char *entry_point);
+
+/**
+ * when your work fully finished with kernel codes and you
+ * wont need to use them anymore , you can use this
+ * function to cleanup all the mess which they created from memory
+ */
+void free_compute_kernel_codes(uintptr_t gpu_res_index);
+
+/**
  * because setting CKernel config can be annoying if you just
  * want to do simple task , this function provides general
- * config which will meet most of your needs . this function
- * sets setting_cache_index to -1 , if you used this function before
- * instead of using this function again . you can use the index from
- * before . also if you dont use that index it will cause extra gpu
- * resource creation
+ * config which will meet most of your needs . since v4.0.0
+ * this function calls create_computing_gpu_resources automatically
+ * and assign its return value to config_index of your CKernel variable .
+ * only use this function once in your programs , instead of using this
+ * many times and causing memory leaks (well all that mem can be freed by free_compute_cache function)
+ * use config_index field of CKernel variable
  */
-void set_kernel_default_config(struct CKernel *kernel);
+uintptr_t set_kernel_default_config(struct CKernel *kernel);
 
 /**
  * the simple and compact function for sending
