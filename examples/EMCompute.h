@@ -29,10 +29,6 @@ SOFTWARE.*/
 #include <stdlib.h>
 
 /**
- * NOTE : on linux machines memory leak might happen if you use
- * vulkan backend until NVIDIA drivers for linux get fixed .
- *
- *
  * computing backends of the api
  */
 typedef enum GPUComputingBackend {
@@ -89,9 +85,9 @@ typedef enum GPUMemorySettings {
    */
   prefer_memory = 1,
   /**
-   * will be supported in next versions , by default for now it is set to
-   * prefer_memory . in next versions you can tell how much memory
-   * you need to allocate on gpu side
+   * if you set this , you have to set customize.gpu_memory_custom
+   * this variable will be used for memory allocation in gpu
+   * it sets min and max of memory you need in gpu side
    */
   custom_memory = 3,
 } GPUMemorySettings;
@@ -167,6 +163,10 @@ typedef struct GPUComputingConfig {
   enum GPUMemorySettings memory;
 } GPUComputingConfig;
 
+/**
+ * this struct is used for advance customizations refered as
+ * custom_speed settings
+ */
 typedef struct GPUSpeedCustom {
   uint32_t max_texture_dimension_1d;
   uint32_t max_texture_dimension_2d;
@@ -204,15 +204,33 @@ typedef struct GPUSpeedCustom {
   uint32_t max_non_sampler_bindings;
 } GPUSpeedCustom;
 
+/**
+ * with this struct you set min - max of
+ * memory you will need in gpu side
+ */
 typedef struct GPUMemoryCustom {
-  uint64_t start;
-  uint64_t end;
+  /**
+   * min mem needed in gpu side
+   */
+  uint64_t min;
+  /**
+   * max mem needed in gpu side
+   */
+  uint64_t max;
 } GPUMemoryCustom;
 
+/**
+ * this struct represents custom settings
+ */
 typedef struct GPUCustomSettings {
+  /**
+   * this variable keeps custom speed settings
+   */
   struct GPUSpeedCustom gpu_speed_custom;
+  /**
+   * this variable keeps memory custom settings
+   */
   struct GPUMemoryCustom gpu_memory_custom;
-  int32_t index;
 } GPUCustomSettings;
 
 /**
@@ -234,22 +252,19 @@ typedef struct CKernel {
    */
   uint32_t z;
   /**
-   * this is a kernel code which must be in wgsl for now
-   * more shading languages will be supported in the future
+   * since v4.0.0 instead of directly passing
+   * kernel code , you have to pass return
+   * value of register_computing_kernel_code
+   * to this field
    */
-  const char *code;
+  uintptr_t kernel_code_index;
   /**
-   * this part in the code , tell to the api which
-   * function in the code must be called by gpu
-   * when the task is sent to gpu
+   * since v4.0.0 instead of directly passing
+   * configs of your computing task
+   * you have to create_computing_gpu_resources
+   * return value to this field
    */
-  const char *code_entry_point;
-  /**
-   * by setting config you can customize behavior of the
-   * gpu
-   */
-  struct GPUComputingConfig config;
-  struct GPUCustomSettings customize;
+  uintptr_t config_index;
 } CKernel;
 
 /**
@@ -302,11 +317,41 @@ typedef struct GroupOfBinders {
 } GroupOfBinders;
 
 /**
+ * since v4.0.0 you must create_computing_gpu_resources
+ * it will return gpu_res_descriptor as uintptr_t (usize)
+ * and you have to pass it as config_index value to
+ * CKernel variable
+ */
+uintptr_t create_computing_gpu_resources(struct GPUComputingConfig config,
+                                         struct GPUCustomSettings customize);
+
+/**
+ * since v4.0.0 your kernel code must be registered before
+ * you want to use it . gpu_res_index is gpu resource descriptor
+ * which you get from create_computing_gpu_resources .
+ */
+uintptr_t register_computing_kernel_code(uintptr_t gpu_res_index,
+                                         const char *code,
+                                         const char *entry_point);
+
+/**
+ * when your work fully finished with kernel codes and you
+ * wont need to use them anymore , you can use this
+ * function to cleanup all the mess which they created from memory
+ */
+void free_compute_kernel_codes(uintptr_t gpu_res_index);
+
+/**
  * because setting CKernel config can be annoying if you just
  * want to do simple task , this function provides general
- * config which will meet most of your needs
+ * config which will meet most of your needs . since v4.0.0
+ * this function calls create_computing_gpu_resources automatically
+ * and assign its return value to config_index of your CKernel variable .
+ * only use this function once in your programs , instead of using this
+ * many times and causing memory leaks (well all that mem can be freed by free_compute_cache function)
+ * use config_index field of CKernel variable
  */
-void set_kernel_default_config(struct CKernel *kernel);
+uintptr_t set_kernel_default_config(struct CKernel *kernel);
 
 /**
  * the simple and compact function for sending
@@ -328,10 +373,10 @@ int32_t compute(struct CKernel *kernel,
 /**
  * since version 2.0.0 api does
  * caching for gpu resources on the memory .
- * the api does deallocates the caches
+ * the api does deallocate the caches
  * automatically , but in some cases
  * you might want to do it manually
- * so just call this free_compute_cache();
+ * so just call free_compute_cache();
  */
 void free_compute_cache(void);
 

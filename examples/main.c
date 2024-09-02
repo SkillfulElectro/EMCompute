@@ -11,9 +11,9 @@ int main() {
   kernel.z = 100;
 
   // WGSL code to perform element-wise addition of example_data and example_data0
-  kernel.code = 
+  const char* code = 
     "@group(0)@binding(0) var<storage, read_write> v_indices: array<u32>; "
-    "@group(0)@binding(1) var<storage, read_write> v_indices0: array<u32>; "
+    "@group(0)@binding(1) var<storage, read> v_indices0: array<u32>; "
     "@compute @workgroup_size(10 , 1 , 1)" 
     "fn main(@builtin(global_invocation_id) global_id: vec3<u32>) { "
     "  let idx = global_id.x % 60000; "
@@ -22,8 +22,10 @@ int main() {
     "  "
     "}";
 
-  set_kernel_default_config(&kernel);
-  kernel.code_entry_point = "main";
+  uintptr_t index = set_kernel_default_config(&kernel);
+  kernel.kernel_code_index = register_computing_kernel_code(index , code , "main");
+
+
 
   // Initialize data
   uint32_t example_data[60000];
@@ -55,11 +57,15 @@ int main() {
 
   // for (int i = 0 ; i< 1000000 ;++i){
     compute(&kernel, groups, 1);
+    //free_compute_cache();
   // }
+  
 
   // Check results
-  printf("example_data[4]: %d\n", example_data[4]);
+  printf("example_data[4]: %d\n", example_data[50000]);
   printf("example_data0[4]: %d\n", example_data0[4]);
+
+  free_compute_cache();
 
   return 0;
 }
