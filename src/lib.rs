@@ -482,12 +482,12 @@ impl CKernel {
                 },
                 Some(arci) => {
                     let mut gpu_data = arci.lock().unwrap();
-                    if gpu_data.len() < self.config_index {
+                    if gpu_data.len() <= self.config_index {
                         panic!("ERROR : invalid config_index used for CKernel arg");
                     }
                     if let Some(arcii) = &gpu_data[self.config_index].res {
                         let mut gpu_device_data = arcii.lock().unwrap();
-                        if gpu_device_data.len() < self.kernel_code_index {
+                        if gpu_device_data.len() <= self.kernel_code_index {
                             panic!("ERROR : invalid kernel_code_index used for CKernel arg");
                         }
 
