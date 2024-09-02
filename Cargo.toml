@@ -1,6 +1,6 @@
 [package]
 name = "EMCompute"
-version = "3.0.0"
+version = "4.0.0"
 edition = "2021"
 authors = ["ElectroMutex"]
 description = "fast , simple and cross-platform parallel computing library"

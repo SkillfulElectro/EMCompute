@@ -137,6 +137,7 @@ int main() {
 - since version 3.0.0 GPUCustomSettings , GPUMemoryCustom and GPUSpeedCustom added to API for setting customization for custom_speed and custom_memory (for more details about them read comments on .h , .hpp and .pyx files)
 - since version 3.0.0 if custom_speed or custom_memory are set in config field of CKernel , equivalent fields of customize will be checked
 - since version 3.0.0 caching method changed and is controled by setting_cache_index , if you set it to negative values which set_kernel_default_config function does ; api will allocate new gpu resources , so if you have used a config before you must keep track of it unless you want to go out of memory
+- since version 4.0.0 structures of CKernel changed , kernel code and configs must be registered before using compute function . for seeing changes in details refer to https://github.com/SkillfulElectro/EMCompute/tree/main/header_files and read the comments on them or https://docs.rs/EMCompute/latest/EMCompute/
 
 
 ## Contribution

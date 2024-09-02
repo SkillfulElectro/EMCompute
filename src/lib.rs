@@ -1,3 +1,79 @@
+//! fast , simple and cross-platform GPGPU parallel computing library
+//! NOTE : there are still some problems with vulkan backend on linux 
+//! ##Example
+//! - this example is for v4.0.0 C ABI 
+//! ```c
+//! #include <stdio.h>
+//! #include <stdint.h>
+//! #include <stdlib.h>  
+//! #include "EMCompute.h"
+//! 
+//! int main() {
+//!  Define the kernel
+//!  CKernel kernel;
+//!  kernel.x = 60000;  // Number of workgroups in the x dimension
+//!  kernel.y = 1000;
+//!  kernel.z = 100;
+//!
+//!  // WGSL code to perform element-wise addition of example_data and example_data0
+//!  const char* code = 
+//!    "@group(0)@binding(0) var<storage, read_write> v_indices: array<u32>; "
+//!    "@group(0)@binding(1) var<storage, read> v_indices0: array<u32>; "
+//!    "@compute @workgroup_size(10 , 1 , 1)" 
+//!    "fn main(@builtin(global_invocation_id) global_id: vec3<u32>) { "
+//!    "  let idx = global_id.x % 60000; "
+//!    "   "
+//!    "v_indices[idx] = v_indices[idx] + v_indices0[idx]; "
+//!    "  "
+//!    "}";
+//!
+//!  uintptr_t index = set_kernel_default_config(&kernel);
+//!  kernel.kernel_code_index = register_computing_kernel_code(index , code , "main");
+//!
+//!
+//!
+//!  // Initialize data
+//!  uint32_t example_data[60000];
+//!  uint32_t example_data0[60000];
+//!
+//!  for (int i = 0; i < 60000; ++i) {
+//!    example_data[i] = 1;
+//!    example_data0[i] = 1;
+//!  }
+//!
+//!  // Bind data
+//!  DataBinder data;
+//!  data.bind = 0;
+//!  data.data = (uint8_t *)example_data;
+//!  data.data_len = sizeof(uint32_t)*60000/sizeof(uint8_t);
+//!
+//!  DataBinder data0;
+//!  data0.bind = 1;
+//!  data0.data = (uint8_t *)example_data0;
+//!  data0.data_len = sizeof(uint32_t)*60000/sizeof(uint8_t);
+//!
+//!  DataBinder group0[] = {data, data0};
+//!  GroupOfBinders wrapper;
+//!  wrapper.group = 0;
+//!  wrapper.datas = group0;
+//!  wrapper.datas_len = 2;
+//!
+//!  GroupOfBinders groups[] = {wrapper};
+//!
+//!  compute(&kernel, groups, 1);
+//!  
+//!
+//!  // Check results
+//!  printf("example_data[4]: %d\n", example_data[50000]);
+//!  printf("example_data0[4]: %d\n", example_data0[4]);
+//!
+//!  free_compute_cache();
+//!
+//!  return 0;
+//! }
+//! ```
+
+
 use std::os::raw::c_char;
 use std::ffi::CStr;
 
@@ -10,25 +86,236 @@ use std::sync::{Arc, Mutex};
 
 use core::ops::Range;
 
+struct GPUDeviceCollection {
+    compute_pipeline : Arc<wgpu::ComputePipeline> ,
+}
+
 struct GPUCollection {
     device : Arc<wgpu::Device> ,
     queue : Arc<wgpu::Queue> ,
+    res : Option<Arc<Mutex<Vec<GPUDeviceCollection>>>> ,
 }
-
 
 
 static mut GPU_RES_KEEPER : Option<Arc<Mutex<Vec<GPUCollection>>>> = None;
 
-static mut GPU_KERNELS_KEEPER : Option<Arc<Mutex<Vec<Arc<wgpu::ShaderModule>>>>> = None;
+
+fn cchar_as_string(cstri : *const c_char) -> Option<String> {
+    unsafe {
+        if cstri.is_null() {
+            None    
+        } else {
+            Some(CStr::from_ptr(cstri).to_string_lossy().into_owned())
+        }
+    }
+}
+
+
+#[no_mangle]
+/// since v4.0.0 you must create_computing_gpu_resources 
+/// it will return gpu_res_descriptor as uintptr_t (usize) 
+/// and you have to pass it as config_index value to 
+/// CKernel variable
+pub extern "C" fn create_computing_gpu_resources(config : GPUComputingConfig , customize : GPUCustomSettings) -> usize {
+
+
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor{
+        backends : match config.backend {
+            GPUComputingBackend::vulkan => {
+                wgpu::Backends::VULKAN
+            },
+            GPUComputingBackend::opengl => {
+                wgpu::Backends::GL
+            },
+            GPUComputingBackend::all => {
+                wgpu::Backends::all()
+            },
+            GPUComputingBackend::default_backend => {
+                wgpu::Backends::default()
+            },
+            GPUComputingBackend::metal => {
+                wgpu::Backends::METAL 
+            },
+            GPUComputingBackend::direct_x12 => {
+                wgpu::Backends::DX12
+            },
+            GPUComputingBackend::highest_support => {
+                wgpu::Backends::PRIMARY
+            },
+            GPUComputingBackend::lowest_support => {
+                wgpu::Backends::SECONDARY
+            },
+            GPUComputingBackend::webgpu => {
+                wgpu::Backends::BROWSER_WEBGPU
+            },
+        },
+        ..Default::default()
+    });
+
+    let adapter = pollster::block_on(instance
+        .request_adapter(&wgpu::RequestAdapterOptions{
+            power_preference : match config.power {
+                GPUPowerSettings::none => {
+                    wgpu::PowerPreference::None
+                },
+                GPUPowerSettings::LowPower => {
+                    wgpu::PowerPreference::LowPower
+                },
+                GPUPowerSettings::HighPerformance => {
+                    wgpu::PowerPreference::HighPerformance
+                },
+            },
+            ..Default::default()
+        }))
+    .expect("ERROR : could not allocate gpu resources which match your configs");
+
+    let (device, queue) = pollster::block_on(adapter
+        .request_device(
+            &wgpu::DeviceDescriptor {
+                label: None,
+                required_features: wgpu::Features::empty(),
+                required_limits: match config.speed {
+                    GPUSpeedSettings::lowest_speed => {
+                        wgpu::Limits::downlevel_webgl2_defaults()
+                    },
+                    GPUSpeedSettings::low_speed => {
+                        wgpu::Limits::downlevel_defaults()
+                    },
+                    GPUSpeedSettings::custom_speed => {
+
+                        customize.gpu_speed_custom.to_gpu_limits()
+                    },
+                    GPUSpeedSettings::default_speed => {
+                        wgpu::Limits::default()
+                    },
+                },
+                memory_hints: match config.memory {
+                    GPUMemorySettings::prefer_performance => {
+                        wgpu::MemoryHints::Performance
+                    },
+                    GPUMemorySettings::prefer_memory => {
+                        wgpu::MemoryHints::MemoryUsage
+                    },
+                    GPUMemorySettings::custom_memory => {
+
+
+                        wgpu::MemoryHints::Manual{
+                            suballocated_device_memory_block_size : customize.gpu_memory_custom.to_rs_range(),
+                        }
+                    },
+                },
+            },
+            None,
+            ))
+                .expect("ERROR : could not allocate gpu resources which match your configs");
+
+    // println!("get real done");
+    unsafe{
+        let device = Arc::new(device);
+        let queue = Arc::new(queue);
+
+        if let None = &GPU_RES_KEEPER {
+            GPU_RES_KEEPER = Some(Arc::new(Mutex::new(Vec::new())));
+        }
+
+        let arci = GPU_RES_KEEPER.clone().unwrap();
+        let mut GPU_Data = arci.lock().unwrap();
+
+        let setting_cache_index = GPU_Data.len();
+        GPU_Data.push(GPUCollection{
+            device : Arc::clone(&device) ,
+            queue : Arc::clone(&queue) ,
+            res : None ,
+        });
+
+        return setting_cache_index;
+    }
+}
+
+#[no_mangle]
+/// since v4.0.0 your kernel code must be registered before 
+/// you want to use it . gpu_res_index is gpu resource descriptor 
+/// which you get from create_computing_gpu_resources .
+pub extern "C" fn register_computing_kernel_code(gpu_res_index : usize , code : *const c_char , entry_point : *const c_char) -> usize {
+    unsafe {
+        match &GPU_RES_KEEPER {
+            None => {
+                panic!("ERROR : use create_gpu_resources function first to add and get index of your config !");
+            },
+            Some(arci) => {
+                let mut gpu_data = arci.lock().unwrap();
+                if gpu_data.len() <= gpu_res_index {
+                    panic!("ERROR : invalid gpu_res_index provided for register_kernel_code function , please use the number which you received from create_gpu_resources function");
+                }
+
+                let shader = gpu_data[gpu_res_index].device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                    label: Some("Shader"),
+                    source: wgpu::ShaderSource::Wgsl(cchar_as_string(code).expect("ERROR : No computing kernel code provided , code field is not set .").into()),
+                });
 
 
 
+                let compute_pipeline = gpu_data[gpu_res_index].device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: None,
+                    layout: None,
+                    module: &shader,
+                    entry_point: &cchar_as_string(entry_point).expect("ERROR : No code_entry_point field is set , it must be name of function which your kernel code starts from") ,
+                    compilation_options: Default::default(),
+                    cache: None,
+                });
+
+                let arc_compute_pipe = Arc::new(compute_pipeline);
+
+                match &gpu_data[gpu_res_index].res {
+                    None => {
+                        gpu_data[gpu_res_index].res = Some(Arc::new(Mutex::new(Vec::new())));
+                        let arci = gpu_data[gpu_res_index].res.clone().unwrap();
+                        let mut gpu_device_res = arci.lock().unwrap();
+                        let index = gpu_device_res.len();
+                        gpu_device_res.push(GPUDeviceCollection{
+                            compute_pipeline : Arc::clone(&arc_compute_pipe) ,
+                        });
+
+                        return index;
+                    },
+                    Some(arci) => {
+                        let mut gpu_device_res = arci.lock().unwrap();
+                        let index = gpu_device_res.len();
+                        gpu_device_res.push(GPUDeviceCollection{
+                            compute_pipeline : Arc::clone(&arc_compute_pipe) ,
+                        });
+
+                        return index;
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[no_mangle]
+/// when your work fully finished with kernel codes and you 
+/// wont need to use them anymore , you can use this 
+/// function to cleanup all the mess which they created from memory
+pub extern "C" fn free_compute_kernel_codes(gpu_res_index : usize){
+    unsafe {
+    match &GPU_RES_KEEPER {
+        None => return ,
+        Some(arci) => {
+            let mut gpu_data = arci.lock().unwrap();
+            if gpu_data.len() < gpu_res_index {
+                return;
+            }else{
+                gpu_data[gpu_res_index].res = None;
+                return;
+            }
+        }
+    }
+    }
+}
 
 
-/// NOTE : on linux machines memory leak might happen if you use 
-/// vulkan backend until NVIDIA drivers for linux get fixed .
-///
-///
+
 
 
 
@@ -134,44 +421,31 @@ pub struct CKernel {
     pub y : u32 ,
     /// set max number of workgroups in z dimension
     pub z : u32 ,
-    /// this is a kernel code which must be in wgsl for now
-    /// more shading languages will be supported in the future
-    pub code : *const c_char ,
-    /// this part in the code , tell to the api which 
-    /// function in the code must be called by gpu 
-    /// when the task is sent to gpu 
-    pub code_entry_point : *const c_char ,
-    /// by setting config you can customize behavior of the 
-    /// gpu
-    pub config : GPUComputingConfig ,
-    /// since v3.0.0 when you set any of configs to 
-    /// custom , you can set custom configs to it 
-    /// by setting your customizations on equivalent field of 
-    /// customize 
-    pub customize : GPUCustomSettings ,
-    /// since v3.0.0 caching method is based 
-    /// on the setting_cache_index 
-    /// this changes happened to caching 
-    /// by granting the full control to the user .
-    /// when you for first time use a config and customize , api will 
-    /// store them on dynamic array and set this index automatically .
-    /// NOTE : 1. if you use a config for first time use negative index - 2. if 
-    /// you used a config before keep its index to use it
-    pub setting_cache_index : i32 ,
+    /// since v4.0.0 instead of directly passing 
+    /// kernel code , you have to pass return 
+    /// value of register_computing_kernel_code
+    /// to this field 
+    pub kernel_code_index : usize ,
+    /// since v4.0.0 instead of directly passing 
+    /// configs of your computing task 
+    /// you have to create_computing_gpu_resources
+    /// return value to this field
+    pub config_index : usize ,
 }
 
 #[no_mangle]
 /// because setting CKernel config can be annoying if you just 
 /// want to do simple task , this function provides general 
-/// config which will meet most of your needs . this function
-/// sets setting_cache_index to -1 , if you used this function before 
-/// instead of using this function again . you can use the index from 
-/// before . also if you dont use that index it will cause extra gpu 
-/// resource creation 
-pub extern "C" fn set_kernel_default_config(kernel: *mut CKernel) {
+/// config which will meet most of your needs . since v4.0.0 
+/// this function calls create_computing_gpu_resources automatically
+/// and assign its return value to config_index of your CKernel variable .
+/// only use this function once in your programs , instead of using this 
+/// many times and causing memory leaks (well all that mem can be freed by free_compute_cache function)
+/// use config_index field of CKernel variable 
+pub extern "C" fn set_kernel_default_config(kernel: *mut CKernel) -> usize{
     // println!("set start"); 
     if kernel.is_null() {
-        return;
+        panic!("ERROR : NULL value provided for set_kernel_default_config");
     }
 
     unsafe {
@@ -179,170 +453,50 @@ pub extern "C" fn set_kernel_default_config(kernel: *mut CKernel) {
         let kernel = &mut *kernel;
 
 
-        kernel.config = GPUComputingConfig {
+        let config = GPUComputingConfig {
             backend: GPUComputingBackend::opengl,
-            power: GPUPowerSettings::none,
+            power: GPUPowerSettings::HighPerformance,
             speed: GPUSpeedSettings::low_speed,
             memory: GPUMemorySettings::prefer_memory,   
         };
 
-        kernel.setting_cache_index = -1;
+        let customize = GPUCustomSettings::default();
 
+        let index = create_computing_gpu_resources(config , customize);
 
+        kernel.config_index = index;
+        
+        return index;
     }
-
-    // println!("set done");
 }
 
 
 impl CKernel {
-    // this function is for future implementions
-    fn code_as_string(&self) -> Option<String> {
-        unsafe {
-            if self.code.is_null() {
-                None    
-            } else {
-                Some(CStr::from_ptr(self.code).to_string_lossy().into_owned())
-            }
-        }
-    }
-
-    // this function is for future implementions
-    fn ep_as_string(&self) -> Option<String> {
-        unsafe {
-            if self.code.is_null() {
-                None    
-            } else {
-                Some(CStr::from_ptr(self.code_entry_point).to_string_lossy().into_owned())
-            }
-        }
-    }
-
     // this function converts enums to
     // equivalent gpu resources
-    fn get_real_config(&mut self) -> (Arc<wgpu::Device> , Arc<wgpu::Queue>) {
-
-
+    fn get_real_config(&self) -> (Arc<wgpu::Device> , Arc<wgpu::Queue> , Arc<wgpu::ComputePipeline>) {
         unsafe{
             match &GPU_RES_KEEPER {
                 None => {
-                    GPU_RES_KEEPER = Some(Arc::new(Mutex::new(Vec::new())));
+                    panic!("ERROR : before using compute function you must use create_gpu_resources and register_kernel_code");
                 },
                 Some(arci) => {
-                    let mut GPU_Data = arci.lock().unwrap();
-                    if !(self.setting_cache_index < 0) && (self.setting_cache_index as usize) < GPU_Data.len() {
-                        return (Arc::clone(&GPU_Data[self.setting_cache_index as usize].device) , Arc::clone(&GPU_Data[self.setting_cache_index as usize].queue));
+                    let mut gpu_data = arci.lock().unwrap();
+                    if gpu_data.len() < self.config_index {
+                        panic!("ERROR : invalid config_index used for CKernel arg");
                     }
-                }
+                    if let Some(arcii) = &gpu_data[self.config_index].res {
+                        let mut gpu_device_data = arcii.lock().unwrap();
+                        if gpu_device_data.len() < self.kernel_code_index {
+                            panic!("ERROR : invalid kernel_code_index used for CKernel arg");
+                        }
+
+                        (Arc::clone(&gpu_data[self.config_index].device) , Arc::clone(&gpu_data[self.config_index].queue) , Arc::clone(&gpu_device_data[self.kernel_code_index].compute_pipeline))
+                    }else{
+                        panic!("ERROR : before using compute function you must register_kernel_code");
+                    }
+                },
             }
-        }
-        // println!("get real start");
-
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor{
-            backends : match self.config.backend {
-                GPUComputingBackend::vulkan => {
-                    wgpu::Backends::VULKAN
-                },
-                GPUComputingBackend::opengl => {
-                    wgpu::Backends::GL
-                },
-                GPUComputingBackend::all => {
-                    wgpu::Backends::all()
-                },
-                GPUComputingBackend::default_backend => {
-                    wgpu::Backends::default()
-                },
-                GPUComputingBackend::metal => {
-                    wgpu::Backends::METAL 
-                },
-                GPUComputingBackend::direct_x12 => {
-                    wgpu::Backends::DX12
-                },
-                GPUComputingBackend::highest_support => {
-                    wgpu::Backends::PRIMARY
-                },
-                GPUComputingBackend::lowest_support => {
-                    wgpu::Backends::SECONDARY
-                },
-                GPUComputingBackend::webgpu => {
-                    wgpu::Backends::BROWSER_WEBGPU
-                },
-            },
-            ..Default::default()
-        });
-
-        let adapter = pollster::block_on(instance
-            .request_adapter(&wgpu::RequestAdapterOptions{
-                power_preference : match self.config.power {
-                    GPUPowerSettings::none => {
-                        wgpu::PowerPreference::None
-                    },
-                    GPUPowerSettings::LowPower => {
-                        wgpu::PowerPreference::LowPower
-                    },
-                    GPUPowerSettings::HighPerformance => {
-                        wgpu::PowerPreference::HighPerformance
-                    },
-                },
-                ..Default::default()
-            }))
-        .expect("ERROR : could not allocate gpu resources which match your configs");
-
-        let (device, queue) = pollster::block_on(adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: None,
-                    required_features: wgpu::Features::empty(),
-                    required_limits: match self.config.speed {
-                        GPUSpeedSettings::lowest_speed => {
-                            wgpu::Limits::downlevel_webgl2_defaults()
-                        },
-                        GPUSpeedSettings::low_speed => {
-                            wgpu::Limits::downlevel_defaults()
-                        },
-                        GPUSpeedSettings::custom_speed => {
-
-                            self.customize.gpu_speed_custom.to_gpu_limits()
-                        },
-                        GPUSpeedSettings::default_speed => {
-                            wgpu::Limits::default()
-                        },
-                    },
-                    memory_hints: match self.config.memory {
-                        GPUMemorySettings::prefer_performance => {
-                            wgpu::MemoryHints::Performance
-                        },
-                        GPUMemorySettings::prefer_memory => {
-                            wgpu::MemoryHints::MemoryUsage
-                        },
-                        GPUMemorySettings::custom_memory => {
-
-
-                            wgpu::MemoryHints::Manual{
-                                suballocated_device_memory_block_size : self.customize.gpu_memory_custom.to_rs_range(),
-                            }                       
-                        },
-                    },
-                },
-                None,
-                ))
-                    .expect("ERROR : could not allocate gpu resources which match your configs");
-
-        // println!("get real done");
-        unsafe{
-            let device = Arc::new(device);
-            let queue = Arc::new(queue);
-
-                let arci = GPU_RES_KEEPER.clone().unwrap();
-                let mut GPU_Data = arci.lock().unwrap();
-
-                self.setting_cache_index = GPU_Data.len() as i32;
-                GPU_Data.push(GPUCollection{
-                    device : Arc::clone(&device) ,
-                    queue : Arc::clone(&queue) ,
-                });
-
-            return (Arc::clone(&device) , Arc::clone(&queue));
         }
     }
 }
@@ -368,7 +522,7 @@ pub struct DataBinder {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone , Default)]
 /// this struct represents custom settings 
 pub struct GPUCustomSettings {
     /// this variable keeps custom speed settings 
@@ -477,16 +631,16 @@ impl GPUSpeedCustom {
 }
 
 /*
-impl DataBinder {
-    // this function is for future implementions
-    unsafe fn data_as_vec(&self) -> Option<Vec<u8>> {
-        if self.data.is_null() {
-            None
-        } else {
-            // Create a Vec<u8> that shares the memory but doesn't deallocate it.
-            Some(Vec::from_raw_parts(self.data, self.data_len, self.data_len))
-        }
-    }
+   impl DataBinder {
+// this function is for future implementions
+unsafe fn data_as_vec(&self) -> Option<Vec<u8>> {
+if self.data.is_null() {
+None
+} else {
+// Create a Vec<u8> that shares the memory but doesn't deallocate it.
+Some(Vec::from_raw_parts(self.data, self.data_len, self.data_len))
+}
+}
 }
 */
 
@@ -535,28 +689,12 @@ pub extern "C" fn compute(kernel : *mut CKernel , data_for_gpu : *mut GroupOfBin
             return -1;
         }
 
-        let (device , queue) = kernel.get_real_config();
+        let (device , queue , compute_pipeline) = kernel.get_real_config();
 
         // println!("compute data stage");
 
 
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Shader"),
-            source: wgpu::ShaderSource::Wgsl(kernel.code_as_string().expect("ERROR : No computing kernel code provided , code field is not set .").into()),
-        });
 
-        // println!("compute pipeline stage");
-
-        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: None,
-            layout: None,
-            module: &shader,
-            entry_point: &kernel.ep_as_string().expect("ERROR : No code_entry_point field is set , it must be name of function which your kernel code starts from") ,
-            compilation_options: Default::default(),
-            cache: None,
-        });
-
-        // println!("compute after pipeline");
 
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -722,20 +860,4 @@ pub extern "C" fn free_compute_cache(){
     unsafe {
         GPU_RES_KEEPER = None;
     }
-}
-
-fn cchar_as_string(cstri : *const c_char) -> Option<String> {
-        unsafe {
-            if cstri.is_null() {
-                None    
-            } else {
-                Some(CStr::from_ptr(cstri).to_string_lossy().into_owned())
-            }
-        }
-}
-
-#[no_mangle]
-pub extern "C" fn register_compute_shader(code : *const c_char) -> usize {
-    let code = cchar_as_string(code).expect("NULL provided ! please pass shader code .");
-    return 2;
 }
