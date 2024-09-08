@@ -65,7 +65,8 @@ int main() {
   // Check results
   printf("example_data[4]: %d\n", example_data[50000]);
   printf("example_data0[4]: %d\n", example_data0[4]);
-
+  free(example_data);
+  free(example_data0);
   free_compute_cache();
 
   return 0;
