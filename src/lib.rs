@@ -78,7 +78,7 @@ use std::os::raw::c_char;
 use std::ffi::CStr;
 
 use wgpu::util::DeviceExt;
-use rayon::prelude::*;
+
 
 use std::sync::{Arc, Mutex};
 
@@ -481,12 +481,12 @@ impl CKernel {
                     panic!("ERROR : before using compute function you must use create_gpu_resources and register_kernel_code");
                 },
                 Some(arci) => {
-                    let mut gpu_data = arci.lock().unwrap();
+                    let gpu_data = arci.lock().unwrap();
                     if gpu_data.len() <= self.config_index {
                         panic!("ERROR : invalid config_index used for CKernel arg");
                     }
                     if let Some(arcii) = &gpu_data[self.config_index].res {
-                        let mut gpu_device_data = arcii.lock().unwrap();
+                        let gpu_device_data = arcii.lock().unwrap();
                         if gpu_device_data.len() <= self.kernel_code_index {
                             panic!("ERROR : invalid kernel_code_index used for CKernel arg");
                         }
@@ -514,11 +514,11 @@ pub struct DataBinder {
     /// 
     /// sizeof(your type) * real_len_of_your_array / sizeof(uint8_t)
     pub data_len: usize,
-    /// pointer to your data  in memory , it must be 
-    /// uint8_t* (*mut u8 in Rust side) 
+    /// address of pointer (since v5.0.0) which holds your data in memory , it must be 
+    /// uint8_t** (*mut *mut u8 in Rust side) 
     /// in gpu side the type of this data will 
     /// be set based on CKernel code you provided
-    pub data: *mut u8,
+    pub data: *mut *mut u8,
 }
 
 #[repr(C)]
@@ -680,8 +680,8 @@ pub extern "C" fn compute(kernel : *mut CKernel , data_for_gpu : *mut GroupOfBin
     {
         // println!("compute start");
         //
-        let mut kernel = unsafe {&mut *kernel};
-        // println!("{:?}" , kernel.index);
+        let kernel = unsafe {&mut *kernel};
+
 
 
         if data_for_gpu.is_null(){
@@ -737,8 +737,10 @@ pub extern "C" fn compute(kernel : *mut CKernel , data_for_gpu : *mut GroupOfBin
                     }
 
                     let data : &[u8] = unsafe{
-                        std::slice::from_raw_parts(binder.data , binder.data_len)
+                        std::slice::from_raw_parts(*binder.data , binder.data_len)
                     };
+
+
 
                     let size = std::mem::size_of_val(data) as wgpu::BufferAddress;
 
@@ -800,6 +802,7 @@ pub extern "C" fn compute(kernel : *mut CKernel , data_for_gpu : *mut GroupOfBin
         queue.submit(Some(encoder.finish()));
 
 
+
         let mut index : usize = 0;
         for group in groups {
             let bindings : &mut [DataBinder] = unsafe{
@@ -807,9 +810,11 @@ pub extern "C" fn compute(kernel : *mut CKernel , data_for_gpu : *mut GroupOfBin
             };
 
             for binder in bindings {
-                let data : &mut [u8] = unsafe{
-                    std::slice::from_raw_parts_mut(binder.data , binder.data_len)
+                
+                let data : Box<[u8]> = unsafe{
+                    Box::from_raw(std::slice::from_raw_parts_mut(*binder.data , binder.data_len))
                 };
+                
 
                 let buffer_slice = staging_buffers[index].slice(..);
                 let (sender, receiver) = flume::bounded(1);
@@ -822,11 +827,13 @@ pub extern "C" fn compute(kernel : *mut CKernel , data_for_gpu : *mut GroupOfBin
 
 
 
-
-
-                    data.par_iter_mut().zip(mapped_data.par_iter()).for_each(|(d, &value)| {
-                        *d = value;
-                    });
+                    unsafe {
+                        let mapped_data_ptr = mapped_data.as_ptr();
+                        let data: &[u8] = unsafe { std::slice::from_raw_parts(mapped_data_ptr , binder.data_len) };
+                        let tmp_box : Box<[u8]> = data.into();
+                        *binder.data = tmp_box.as_ptr() as *mut u8;
+                        std::mem::forget(tmp_box);
+                    }
 
 
 
@@ -842,7 +849,6 @@ pub extern "C" fn compute(kernel : *mut CKernel , data_for_gpu : *mut GroupOfBin
         }
 
 
-        // println!("compute done");
 
         return 0;
     }
