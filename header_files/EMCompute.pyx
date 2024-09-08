@@ -187,11 +187,11 @@ cdef extern from *:
     #
     # sizeof(your type) * real_len_of_your_array / sizeof(uint8_t)
     uintptr_t data_len;
-    # pointer to your data  in memory , it must be
-    # uint8_t* (*mut u8 in Rust side)
+    # address of pointer (since v5.0.0) which holds your data in memory , it must be
+    # uint8_t** (*mut *mut u8 in Rust side)
     # in gpu side the type of this data will
     # be set based on CKernel code you provided
-    uint8_t *data;
+    uint8_t **data;
 
   # all DataBinder types which have
   # the same @group index in your kernel
