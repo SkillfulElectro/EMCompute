@@ -27,9 +27,10 @@ int main() {
 
 
 
-  // Initialize data
-  uint32_t example_data[60000];
-  uint32_t example_data0[60000];
+
+  uint32_t* example_data = (uint32_t*)malloc(sizeof(uint32_t)*60000);
+  uint32_t* example_data0 = (uint32_t*)malloc(sizeof(uint32_t)*60000);
+
 
   for (int i = 0; i < 60000; ++i) {
     example_data[i] = 1;
