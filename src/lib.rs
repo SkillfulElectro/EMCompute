@@ -828,9 +828,9 @@ pub extern "C" fn compute(kernel : *mut CKernel , data_for_gpu : *mut GroupOfBin
 
 
                     unsafe {
-                        let mapped_data_ptr = mapped_data.as_ptr();
-                        let data: &[u8] = unsafe { std::slice::from_raw_parts(mapped_data_ptr , binder.data_len) };
-                        let tmp_box : Box<[u8]> = data.into();
+                        // let mapped_data_ptr = mapped_data.as_ptr();
+                        // let data: &[u8] = unsafe { std::slice::from_raw_parts(mapped_data_ptr , binder.data_len) };
+                        let tmp_box : Box<[u8]> = mapped_data.into();
                         *binder.data = tmp_box.as_ptr() as *mut u8;
                         std::mem::forget(tmp_box);
                     }
