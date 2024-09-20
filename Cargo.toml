@@ -1,6 +1,6 @@
 [package]
 name = "EMCompute"
-version = "5.0.0"
+version = "6.0.0"
 edition = "2021"
 authors = ["ElectroMutex"]
 description = "fast , simple and cross-platform parallel computing library"
@@ -14,7 +14,7 @@ categories = ["concurrency"]
 
 [lib]
 name = "EMCompute"
-crate-type = ["cdylib"]
+crate-type = ["cdylib" , "lib"]
 
 [dependencies]
 wgpu = "22.1.0"

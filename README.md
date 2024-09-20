@@ -139,6 +139,7 @@ int main() {
 - since version 3.0.0 caching method changed and is controled by setting_cache_index , if you set it to negative values which set_kernel_default_config function does ; api will allocate new gpu resources , so if you have used a config before you must keep track of it unless you want to go out of memory
 - since version 4.0.0 structures of CKernel changed , kernel code and configs must be registered before using compute function . for seeing changes in details refer to https://github.com/SkillfulElectro/EMCompute/tree/main/header_files and read the comments on them or https://docs.rs/EMCompute/latest/EMCompute/
 - since version 5.0.0 not much changes happened , you only must uint8_t** to data field of DataBinder
+- since version 6.0.0 its possible to choose the device manually by setting gpu_index_in_backend_group field of GPUComputingConfig , if its negative , it will be set automatically . and you can get the lists of corresponding backend using get_computing_gpu_infos function , it will return GPUDevices and for freeing it from C you must use free_gpu_devices_infos . more infos -> https://docs.rs/EMCompute/latest/EMCompute/
 
 
 ## Contribution

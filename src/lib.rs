@@ -79,12 +79,30 @@ use std::ffi::CStr;
 
 use wgpu::util::DeviceExt;
 
-
 use std::sync::{Arc, Mutex};
 
-
-
 use core::ops::Range;
+
+mod configuration;
+pub use configuration::
+{GPUComputingBackend , 
+    GPUPowerSettings , 
+    GPUSpeedSettings , 
+    GPUMemorySettings , 
+    GPUComputingConfig};
+
+mod util;
+use util::{cchar_as_string};
+
+mod gpu_device;
+pub use gpu_device::
+{GPUDeviceType , 
+    GPUDeviceInfo , 
+    GPUDevices , 
+    get_computing_gpu_infos , 
+    free_gpu_devices_infos};
+
+
 
 struct GPUDeviceCollection {
     compute_pipeline : Arc<wgpu::ComputePipeline> ,
@@ -100,17 +118,6 @@ struct GPUCollection {
 static mut GPU_RES_KEEPER : Option<Arc<Mutex<Vec<GPUCollection>>>> = None;
 
 
-fn cchar_as_string(cstri : *const c_char) -> Option<String> {
-    unsafe {
-        if cstri.is_null() {
-            None    
-        } else {
-            Some(CStr::from_ptr(cstri).to_string_lossy().into_owned())
-        }
-    }
-}
-
-
 #[no_mangle]
 /// since v4.0.0 you must create_computing_gpu_resources 
 /// it will return gpu_res_descriptor as uintptr_t (usize) 
@@ -118,9 +125,7 @@ fn cchar_as_string(cstri : *const c_char) -> Option<String> {
 /// CKernel variable
 pub extern "C" fn create_computing_gpu_resources(config : GPUComputingConfig , customize : GPUCustomSettings) -> usize {
 
-
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor{
-        backends : match config.backend {
+    let backend = match config.backend {
             GPUComputingBackend::vulkan => {
                 wgpu::Backends::VULKAN
             },
@@ -148,11 +153,18 @@ pub extern "C" fn create_computing_gpu_resources(config : GPUComputingConfig , c
             GPUComputingBackend::webgpu => {
                 wgpu::Backends::BROWSER_WEBGPU
             },
-        },
+        };
+
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor{
+        backends : backend ,
         ..Default::default()
     });
 
-    let adapter = pollster::block_on(instance
+
+    let mut adapter : wgpu::Adapter;
+
+    if config.gpu_index_in_backend_group < 0 {
+        let adapt = pollster::block_on(instance
         .request_adapter(&wgpu::RequestAdapterOptions{
             power_preference : match config.power {
                 GPUPowerSettings::none => {
@@ -168,6 +180,13 @@ pub extern "C" fn create_computing_gpu_resources(config : GPUComputingConfig , c
             ..Default::default()
         }))
     .expect("ERROR : could not allocate gpu resources which match your configs");
+        adapter = adapt;
+
+    }else {
+        let mut adapters = instance.enumerate_adapters(backend);
+        adapter = adapters.swap_remove(config.gpu_index_in_backend_group as usize);
+    }
+
 
     let (device, queue) = pollster::block_on(adapter
         .request_device(
@@ -299,115 +318,22 @@ pub extern "C" fn register_computing_kernel_code(gpu_res_index : usize , code : 
 /// function to cleanup all the mess which they created from memory
 pub extern "C" fn free_compute_kernel_codes(gpu_res_index : usize){
     unsafe {
-    match &GPU_RES_KEEPER {
-        None => return ,
-        Some(arci) => {
-            let mut gpu_data = arci.lock().unwrap();
-            if gpu_data.len() < gpu_res_index {
-                return;
-            }else{
-                gpu_data[gpu_res_index].res = None;
-                return;
+        match &GPU_RES_KEEPER {
+            None => return ,
+            Some(arci) => {
+                let mut gpu_data = arci.lock().unwrap();
+                if gpu_data.len() < gpu_res_index {
+                    return;
+                }else{
+                    gpu_data[gpu_res_index].res = None;
+                    return;
+                }
             }
         }
     }
-    }
 }
 
 
-
-
-
-
-
-#[repr(C)]
-#[derive(Clone , Debug)]
-/// computing backends of the api 
-pub enum GPUComputingBackend {
-    /// targets all of the backends 
-    all = 0 , 
-    /// default backend
-    default_backend = 1 ,
-    /// Supported on Windows, Linux/Android, and macOS/iOS via Vulkan Portability (with the Vulkan feature enabled)
-    vulkan = 2,
-    /// Supported on Linux/Android, the web through webassembly via WebGL, and Windows and macOS/iOS via ANGLE
-    opengl = 3 ,
-    /// MacOS & iOS only
-    metal = 4 ,
-    /// Windows +10 only
-    direct_x12 = 5,
-    /// browser WebGPU
-    webgpu = 6 ,
-    /// targets VULKAN METALDX12 BROWSER_WEBGPU
-    highest_support = 7 ,
-    /// targets OpenGL backend
-    lowest_support = 8 ,
-}
-
-#[repr(C)]
-#[derive(Clone , Debug)]
-/// this enum is used to tell to API
-/// to setup GPU resources based on power saving rules or
-/// not
-pub enum GPUPowerSettings {
-    /// power and performance does not matter
-    none = 0 ,
-    /// choose based on the power saving rules
-    LowPower = 1 ,
-    /// performance is more important
-    HighPerformance = 2 ,
-}
-
-#[repr(C)]
-#[derive(Clone , Debug)]
-/// this enum affects speed of the api 
-/// by setting how much gpu resources
-/// are needed directly , if you take 
-/// too much which your hardware cannot 
-/// provide , panic happens
-pub enum GPUSpeedSettings {
-    /// the lowest resources , supported on all backends
-    lowest_speed = 0 ,
-    /// low resources , supported on all backends expect webgl2
-    /// which our api does not aim to support for now 
-    low_speed = 1 ,
-    /// the default
-    default_speed = 2 ,
-    /// will be supported in next versions , for now it is equal to 
-    /// low_speed
-    custom_speed = 3 ,
-}
-
-#[repr(C)]
-#[derive(Clone , Debug)]
-/// this settings used to tell gpu pre information about 
-/// our work 
-pub enum GPUMemorySettings {
-    /// our app needs to me more performant instead being 
-    /// cable of allocating too much memory on gpu side
-    prefer_performance = 0 ,
-    /// our app will need to allocate memory on gpu side 
-    prefer_memory = 1 ,
-    /// if you set this , you have to set customize.gpu_memory_custom 
-    /// this variable will be used for memory allocation in gpu 
-    /// it sets min and max of memory you need in gpu side 
-    custom_memory = 3 ,
-}
-
-#[repr(C)]
-#[derive(Debug, Clone)]
-/// as config field you have to provide GPUComputingConfig which
-/// represent settings which you wanted
-pub struct GPUComputingConfig {
-    /// set backend which you want 
-    pub backend : GPUComputingBackend ,
-    /// set power settings which meets your needs 
-    pub power : GPUPowerSettings ,
-    /// set speed settings which matches your needs
-    pub speed : GPUSpeedSettings ,
-    /// tell to gpu about your memory usage 
-    pub memory : GPUMemorySettings ,
-}
 
 #[repr(C)]
 #[derive(Debug, Clone)]
@@ -457,7 +383,8 @@ pub extern "C" fn set_kernel_default_config(kernel: *mut CKernel) -> usize{
             backend: GPUComputingBackend::opengl,
             power: GPUPowerSettings::HighPerformance,
             speed: GPUSpeedSettings::low_speed,
-            memory: GPUMemorySettings::prefer_memory,   
+            memory: GPUMemorySettings::prefer_memory,
+            gpu_index_in_backend_group : -1,
         };
 
         let customize = GPUCustomSettings::default();
@@ -465,7 +392,7 @@ pub extern "C" fn set_kernel_default_config(kernel: *mut CKernel) -> usize{
         let index = create_computing_gpu_resources(config , customize);
 
         kernel.config_index = index;
-        
+
         return index;
     }
 }
@@ -810,11 +737,11 @@ pub extern "C" fn compute(kernel : *mut CKernel , data_for_gpu : *mut GroupOfBin
             };
 
             for binder in bindings {
-                
+
                 let data : Box<[u8]> = unsafe{
                     Box::from_raw(std::slice::from_raw_parts_mut(*binder.data , binder.data_len))
                 };
-                
+
 
                 let buffer_slice = staging_buffers[index].slice(..);
                 let (sender, receiver) = flume::bounded(1);
