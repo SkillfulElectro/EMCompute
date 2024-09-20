@@ -49,6 +49,14 @@ cdef extern from *:
     # targets OpenGL backend
     lowest_support # = 8,
 
+  # Computing devices types
+  cdef enum GPUDeviceType:
+    Other # = 0,
+    IntegratedGpu # = 1,
+    DiscreteGpu # = 2,
+    VirtualGpu # = 3,
+    Cpu # = 4,
+
   # this settings used to tell gpu pre information about
   # our work
   cdef enum GPUMemorySettings:
@@ -101,6 +109,18 @@ cdef extern from *:
     GPUSpeedSettings speed;
     # tell to gpu about your memory usage
     GPUMemorySettings memory;
+    # Optional Setting : if you know index of
+    # your prefered gpu device in the list
+    # gpu devices with the same backend , you can
+    # set it , to API gets resources from
+    # that gpu and use it for computing task
+    # ```text
+    # get_computing_gpu_infos function can be used to get list of them
+    # free_gpu_devices_infos function must be used from C side of the program to deallocate
+    # recived gpu infos , in Rust RAII will take care of it
+    # ```
+    # if it sets to negative value , API will automatically choose the gpu device
+    int64_t gpu_index_in_backend_group;
 
   # this struct is used for advance customizations refered as
   # custom_speed settings
@@ -207,6 +227,32 @@ cdef extern from *:
     # len of datas array
     uintptr_t datas_len;
 
+  # this struct is used for storing information about
+  # each device
+  cdef struct GPUDeviceInfo:
+    # name of the device
+    const char *name;
+    # vendor ID of the device
+    uint32_t vendor;
+    # device id of the device
+    uint32_t device;
+    # type of the device , GPUDeviceType
+    GPUDeviceType device_type;
+    # driver name
+    const char *driver;
+    # driver information
+    const char *driver_info;
+    # corresponding GPUComputingBackend
+    GPUComputingBackend backend;
+
+  # this function stores an dynamic array of GPUDeviceInfo with len ,
+  # it must be freed with free_gpu_devices_infos function after usage
+  cdef struct GPUDevices:
+    # len of the dyn array
+    uintptr_t len;
+    # pointer to the GPUDeviceInfo array
+    GPUDeviceInfo *infos;
+
   # since v4.0.0 you must create_computing_gpu_resources
   # it will return gpu_res_descriptor as uintptr_t (usize)
   # and you have to pass it as config_index value to
@@ -257,3 +303,9 @@ cdef extern from *:
   # you might want to do it manually
   # so just call free_compute_cache();
   void free_compute_cache();
+
+  # this function returns GPUDevices of passed GPUComputingBackend
+  GPUDevices get_computing_gpu_infos(GPUComputingBackend backend);
+
+  # this function is used for deallocating GPUDevices type from C side
+  void free_gpu_devices_infos(GPUDevices *devices);
